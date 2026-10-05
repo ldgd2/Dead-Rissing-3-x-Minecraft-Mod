@@ -1,0 +1,56 @@
+================================================================================
+GUÍA DE LA DLL NATIVA PARA DEAD RISING 3 (CROSSOVER DEADDRISING <-> MINECRAFT)
+================================================================================
+
+¿QUÉ ES ESTA DLL?
+-----------------
+Esta es la DLL nativa (en C++ x64) que se ejecuta dentro del proceso de Dead Rising 3
+(deadrising3.exe). Es el corazón del crossover:
+
+1. Renderizado DirectX 11 (Pilar 1):
+   Engancha el Present Hook de DX11 para fusionar el canal alfa transparente de Minecraft
+   sobre la cámara de Dead Rising 3 a 60 FPS estables.
+
+2. Modo Títere y Cámara F5 (Pilar 2):
+   Teletransporta a Nick a las coordenadas de Steve en tiempo real, oculta el modelo
+   humano en 1ra persona y sincroniza el esqueleto/huesos.
+   Tecla de pánico / Switch de Realidades: Presiona '.' para alternar entre DR3 puro y Crossover.
+
+3. Durabilidad y Loot Dinámico NBT (Pilar 3):
+   Intercepta la firma AOB 83 79 10 00 (Perfect Weapon Condition) para leer el offset [rcx+10].
+   Al golpear zombies o recoger armas del suelo, las transfiere a la hotbar de Minecraft sin
+   usar mapeos estáticos, leyendo los metadatos directamente de la memoria de Capcom.
+
+4. Disparo, Curación y Lanzamiento Balístico Havok (Pilar 4):
+   Al presionar Q en Minecraft, genera el ítem físico en el motor Havok de DR3 y le aplica
+   rotación/tumbling según el tipo de herramienta, infligiendo daño si impacta a un zombie.
+
+5. Sincronización del Reloj y Muros de Colisión (Pilar 5):
+   Lee las horas del mundo de DR3 vía AOB 8B 41 28 para sincronizar el ciclo solar en Minecraft.
+   Crea cubos de colisión invisibles estáticos de 1x1x1m donde construyas bloques, frenando
+   físicamente a las hordas de zombies.
+
+
+¿CÓMO SE INSTALA? (SÚPER FÁCIL - SIN INYECTORES)
+-----------------------------------------------
+1. Toma el archivo:
+      dinput8.dll
+2. Cópialo directamente en la carpeta donde tienes instalado Dead Rising 3:
+      Ejemplo Steam:
+      C:\Program Files (x86)\Steam\steamapps\common\Dead Rising 3\
+
+      (Debe quedar en la misma carpeta que 'deadrising3.exe').
+
+3. ¡Listo! 
+   Dead Rising 3 busca y carga automáticamente 'dinput8.dll' al iniciar mediante el
+   proxy nativo de DirectInput 8 exportado (DirectInput8Create).
+   No necesitas inyectores externos (Cheat Engine, Xenos, etc.), ni programas raros,
+   ni Python instalado.
+
+
+SI DESEAS RECOMPILAR LA DLL DESDE EL CÓDIGO FUENTE:
+--------------------------------------------------
+Simplemente ejecuta:
+      compilar_dll.bat
+Este script detectará tu compilador de Visual Studio 2022 automáticamente y generará
+los nuevos binarios optimizados en Release x64 en menos de 10 segundos.

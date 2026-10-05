@@ -1,0 +1,24 @@
+{
+  "required": true,
+  "minVersion": "0.8",
+  "package": "com.crossover.mixins",
+  "compatibilityLevel": "JAVA_17",
+  "client": [
+    "MixinBackgroundRenderer",
+    "MixinClientPlayerEntity",
+    "MixinClientPlayerInteractionManager",
+    "MixinDrawContext",
+    "MixinFramebuffer",
+    "MixinGameOptions",
+    "MixinInGameHud",
+    "MixinItemEntityRenderer",
+    "MixinMinecraftClient",
+    "MixinPlayerEntityModel",
+    "MixinPlayerEntityRenderer",
+    "MixinScreen",
+    "MixinWorldRenderer"
+  ],
+  "injectors": {
+    "defaultRequire": 1
+  }
+}

@@ -1,0 +1,30 @@
+{
+  "schemaVersion": 1,
+  "id": "crossover_dr3",
+  "version": "1.0.0",
+  "name": "Dead Rising 3 x Minecraft Symbiosis",
+  "description": "Orquestador de puente simbiótico entre Dead Rising 3 y Minecraft Fabric con renderizado transparente, durabilidad en tiempo real y recolección dinámica.",
+  "authors": [
+    "Crossover Team"
+  ],
+  "contact": {},
+  "license": "MIT",
+  "icon": "assets/crossover_dr3/textures/item/chainsaw.png",
+  "environment": "*",
+  "entrypoints": {
+    "main": [
+      "com.crossover.core.CrossoverMain"
+    ],
+    "client": [
+      "com.crossover.core.CrossoverMod"
+    ]
+  },
+  "mixins": [
+    "crossover_dr3.mixins.json"
+  ],
+  "depends": {
+    "fabricloader": ">=0.14.21",
+    "minecraft": "~1.20.1",
+    "java": ">=17"
+  }
+}

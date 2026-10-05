@@ -1,0 +1,105 @@
+# ==============================================================================
+# GITIGNORE - DEAD RISING 3 x MINECRAFT CROSSOVER
+# ==============================================================================
+
+# --- Directorios de Exportacion y Distribucion Final ---
+dist/
+export/
+Release_Crossover_DR3_MC/
+*.dll
+*.asi
+*.exe
+*.jar
+
+# Excepciones: Conservar iconos y recursos de medios originales
+!DR3_Crossover_Launcher/icono.ico
+!DR3Hook/DR3Hook/icon.ico
+!modMinecraft/src/main/resources/**
+!DR3Hook/DR3Hook/Resource.rc
+
+# --- Visual Studio & MSVC (C / C++) ---
+.vs/
+*.user
+*.suo
+*.sln.docstates
+*.VC.db
+*.opendb
+x64/
+x86/
+Debug/
+Release/
+ARM64/
+[Bb]in/
+[Oo]bj/
+*.obj
+*.o
+*.ilk
+*.pdb
+*.tlog
+*.idb
+*.lastbuildstate
+*.res
+*.exp
+*.lib
+*.pch
+*.ipch
+*.log
+
+# --- CMake (Orquestador C++) ---
+CMakeCache.txt
+CMakeFiles/
+CMakeScripts/
+Testing/
+Makefile
+cmake_install.cmake
+install_manifest.txt
+compile_commands.json
+CTestTestfile.cmake
+_deps/
+orquestador/build/
+DR3Hook/build/
+
+# --- Java / Gradle / Fabric Loom (modMinecraft) ---
+.gradle/
+build/
+bin/
+out/
+*.class
+.loom-cache/
+.fabric/
+run/
+modMinecraft/build/
+modMinecraft/.gradle/
+modMinecraft/.fabric/
+
+# --- Python & PyInstaller (Launcher) ---
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+.venv/
+ENV/
+DR3_Crossover_Launcher/build/
+DR3_Crossover_Launcher/dist/
+DR3_Crossover_Launcher/venv/
+DR3_Crossover_Launcher/*.spec
+*.egg-info/
+.installed.cfg
+*.egg
+
+# --- Basura de Sistema Operativo y Editores ---
+.DS_Store
+Thumbs.db
+desktop.ini
+*.swp
+*~
+*.bak
+.idea/
+.vscode/
+*.sublime-project
+*.sublime-workspace
+logs/
+*.tmp
