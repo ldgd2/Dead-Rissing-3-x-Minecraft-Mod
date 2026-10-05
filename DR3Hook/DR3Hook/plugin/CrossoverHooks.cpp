@@ -614,6 +614,22 @@ namespace DR3Crossover {
                 *(IPC::Quaternion*)(buf + IPC::Offsets::BONE_R_LEG) = qZero;
                 *(IPC::Quaternion*)(buf + IPC::Offsets::BONE_L_LEG) = qZero;
             }
+            uint16_t camMode = *(uint16_t*)(buf + IPC::Offsets::CAMERA_MODE);
+            if (camMode == 1 && gotNickPos && s_bCrossoverActive) {
+                // Modo 1ra Persona: cámara anclada a la altura de los ojos de Nick sin bamboleos
+                __try {
+                    float nickY = *(float*)((uintptr_t)s_pLocalCharacter + 0x44);
+                    view->mCameraPos.X = mcX;
+                    view->mCameraPos.Y = nickY + 1.65f;
+                    view->mCameraPos.Z = mcZ;
+                } __except (EXCEPTION_EXECUTE_HANDLER) {}
+            }
+        }
+
+        // Mantener a Nick Ramos invisible en MT Framework mientras el Crossover esté activo
+        bool* pDrawPlayers = (bool*)_addr(0x1416428A4);
+        if (pDrawPlayers && !IsBadWritePtr(pDrawPlayers, 1)) {
+            *pDrawPlayers = !s_bCrossoverActive;
         }
 
         // 2. Sincronización Bidireccional de Salud y Muerte Cruzada (Nick <-> Steve)
@@ -648,10 +664,12 @@ namespace DR3Crossover {
         if (s_pLocalCharacter && !IsBadReadPtr(s_pLocalCharacter, 0x200)) {
             __try {
                 float dr3Hp = *(float*)((uintptr_t)s_pLocalCharacter + 0x1A0);
-                if (dr3Hp <= 0.0f) {
+                // Solo validar muerte si previamente se había detectado que Nick tenía vida válida (> 50.0f)
+                if (dr3Hp <= 0.0f && s_lastSyncedDr3Health > 50.0f) {
                     *(uint8_t*)(buf + IPC::Offsets::NICK_DEAD) = 1;
                     *(float*)(buf + IPC::Offsets::HEALTH) = 0.0f;
-                } else if (std::abs(dr3Hp - s_lastSyncedDr3Health) > 10.0f) {
+                    s_lastSyncedDr3Health = 0.0f;
+                } else if (dr3Hp > 0.0f && std::abs(dr3Hp - s_lastSyncedDr3Health) > 10.0f) {
                     s_lastSyncedDr3Health = dr3Hp;
                     float percent = (dr3Hp / 1000.0f) * 100.0f;
                     if (percent > 100.0f) percent = 100.0f;

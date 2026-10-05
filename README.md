@@ -6,6 +6,7 @@
 [![IPC](https://img.shields.io/badge/IPC-Win32%20Shared%20Memory-purple.svg)]()
 
 ![Demostración In-Game del Crossover](images/ingame.jpeg)
+![Demostración In-Game del Crossover](images/ingame2.jpeg)
 
 Proyecto de ingeniería inversa de bajo nivel, inyección nativa en memoria (x64) y comunicación inter-proceso (IPC) en tiempo real que integra de manera simbiótica el motor **MT Framework** de **Dead Rising 3** (Capcom) con el cliente Java de **Minecraft** (**Fabric Loader 1.20.1**).
 

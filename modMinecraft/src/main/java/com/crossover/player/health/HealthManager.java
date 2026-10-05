@@ -21,6 +21,13 @@ public class HealthManager {
     public void syncHealth(ClientPlayerEntity player) {
         if (ipc == null || !ipc.isConnected() || player == null) return;
 
+        // Si el jugador está en modo creativo, jamás debe morir por sincronización
+        if (player.isCreative()) {
+            wasDead = false;
+            ipc.clearNickDead();
+            return;
+        }
+
         // 1. Detección de Muerte de Steve en Minecraft
         if (player.isDead() || player.getHealth() <= 0.0f) {
             if (!wasDead) {
@@ -42,7 +49,8 @@ public class HealthManager {
 
         // 2. Detección de Muerte de Nick en Dead Rising 3
         if (ipc.readNickDead()) {
-            if (!player.isDead()) {
+            ipc.clearNickDead(); // Consumir de inmediato para evitar bucle continuo
+            if (!player.isDead() && !player.isCreative()) {
                 System.out.println("[HealthManager] Nick ha muerto en DR3 -> Eliminando a Steve en Minecraft.");
                 player.kill();
                 wasDead = true;
@@ -54,7 +62,7 @@ public class HealthManager {
         if (ipc.readDr3HealthChanged()) {
             float dr3HealthPercent = ipc.readPlayerHealth();
             if (dr3HealthPercent <= 0.0f) {
-                if (!player.isDead()) {
+                if (!player.isDead() && !player.isCreative()) {
                     player.kill();
                     wasDead = true;
                 }

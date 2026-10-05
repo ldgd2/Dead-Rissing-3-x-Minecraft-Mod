@@ -205,6 +205,21 @@ public class Win32SharedMemory {
         return new float[]{x, y, z};
     }
 
+    public float readPlayerX() {
+        if (baseAddress == 0) return 0.0f;
+        return unsafe.getFloat(baseAddress + OFFSET_PLAYER_X);
+    }
+
+    public float readPlayerY() {
+        if (baseAddress == 0) return 0.0f;
+        return unsafe.getFloat(baseAddress + OFFSET_PLAYER_Y);
+    }
+
+    public float readPlayerZ() {
+        if (baseAddress == 0) return 0.0f;
+        return unsafe.getFloat(baseAddress + OFFSET_PLAYER_Z);
+    }
+
     public void writePlayerPosition(float x, float y, float z) {
         if (baseAddress == 0) return;
         unsafe.putFloat(baseAddress + OFFSET_PLAYER_X, x);

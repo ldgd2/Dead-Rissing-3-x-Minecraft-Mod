@@ -124,16 +124,37 @@ public class PlayerManager {
         player.setHeadYaw(yaw);
         player.setBodyYaw(yaw);
 
-        // 7. Control de Físicas según el estado de Autoridad
-        if (currentState == CameraState.THIRD_PERSON) {
-            // DR3 es el Master. Steve es el esclavo visual.
-            // Anclamos a Steve firmemente en el spawn (0, 65, 0) sobre la plataforma sólida de barreras
-            // para que su chunk esté 100% cargado y se renderice de forma impecable en 3ra y 2da persona.
+        // 7. Sincronización continua de la posición de Steve en el mundo de Minecraft
+        float nickX = ipc.readPlayerX();
+        float nickZ = ipc.readPlayerZ();
+
+        if (nickX != 0.0f || nickZ != 0.0f) {
+            double worldX = (double) nickX;
+            double worldZ = (double) nickZ;
+            double worldY = 65.0; // Altura sobre el plano de barreras
+
             player.setNoGravity(true);
             player.setVelocity(0, 0, 0);
             player.fallDistance = 0;
-            player.setPos(0.0, 65.0, 0.0);
-        } else if (currentState == CameraState.FIRST_PERSON) {
+            player.setPos(worldX, worldY, worldZ);
+
+            // Generar plataforma dinámica de barreras invisibles sólidas bajo los pies de Steve
+            // para permitir movimiento libre en modo supervivencia sin caer al vacío
+            if (player.getWorld() != null) {
+                int px = (int) Math.floor(worldX);
+                int pz = (int) Math.floor(worldZ);
+                for (int dx = -3; dx <= 3; dx++) {
+                    for (int dz = -3; dz <= 3; dz++) {
+                        net.minecraft.util.math.BlockPos bp = new net.minecraft.util.math.BlockPos(px + dx, 64, pz + dz);
+                        if (player.getWorld().isAir(bp)) {
+                            player.getWorld().setBlockState(bp, net.minecraft.block.Blocks.BARRIER.getDefaultState(), 2);
+                        }
+                    }
+                }
+            }
+        }
+
+        if (currentState == CameraState.FIRST_PERSON) {
             // Minecraft es el Master (WASD + Salto transmitido desde DR3).
             boolean fwd = ipc.readInputW();
             boolean back = ipc.readInputS();
@@ -200,64 +221,10 @@ public class PlayerManager {
      * en las 6 cajas anatómicas del modelo de Steve (Cabeza, Torso, Brazos, Piernas).
      */
     public void applyRetargetingBones(AbstractClientPlayerEntity player, PlayerEntityModel<?> model) {
-        if (ipc == null || !ipc.isConnected() || !isThirdPerson()) return;
-
-        // 1. Extraer rotaciones de huesos desde Memoria Compartida
-        BoneRetargetingData bones = ipc.readBoneRetargeting();
-
-        // Si los huesos aún no tienen datos de cinemática de DR3 (rotaciones en 0),
-        // permitir que Steve use sus animaciones naturales de caminata y carrera de Minecraft
-        boolean hasSkeletonData = (bones.rightArm.pitch != 0.0f || bones.rightArm.yaw != 0.0f ||
-                                   bones.leftArm.pitch != 0.0f  || bones.leftArm.yaw != 0.0f  ||
-                                   bones.rightLeg.pitch != 0.0f || bones.leftLeg.pitch != 0.0f);
-
-        if (!hasSkeletonData) {
-            float pitchRad = (float) Math.toRadians(player.getPitch());
-            model.head.pitch = pitchRad;
-            model.body.pitch = pitchRad * 0.35f;
-            return;
-        }
-
-        // 2. Si hay datos reales de Mocap de Dead Rising 3, inyectamos la cinemática directa
-        player.limbAnimator.setSpeed(0.0f);
-
-        // 3. Inyectar rotaciones en los pivotes de las 6 cajas principales
-        // Cabeza
-        model.head.pitch = bones.head.pitch;
-        model.head.yaw   = bones.head.yaw;
-        model.head.roll  = bones.head.roll;
-
-        // Torso (Espina)
-        model.body.pitch = bones.torso.pitch;
-        model.body.yaw   = bones.torso.yaw;
-        model.body.roll  = bones.torso.roll;
-
-        // Brazo Derecho
-        model.rightArm.pitch = bones.rightArm.pitch;
-        model.rightArm.yaw   = bones.rightArm.yaw;
-        model.rightArm.roll  = bones.rightArm.roll;
-
-        // Brazo Izquierdo
-        model.leftArm.pitch = bones.leftArm.pitch;
-        model.leftArm.yaw   = bones.leftArm.yaw;
-        model.leftArm.roll  = bones.leftArm.roll;
-
-        // Pierna Derecha
-        model.rightLeg.pitch = bones.rightLeg.pitch;
-        model.rightLeg.yaw   = bones.rightLeg.yaw;
-        model.rightLeg.roll  = bones.rightLeg.roll;
-
-        // Pierna Izquierda
-        model.leftLeg.pitch = bones.leftLeg.pitch;
-        model.leftLeg.yaw   = bones.leftLeg.yaw;
-        model.leftLeg.roll  = bones.leftLeg.roll;
-
-        // 4. Copiar transformaciones a las capas secundarias de la skin de Steve
+        // Preservar la esencia clásica y animaciones fluidas naturales de Steve en Minecraft (caminata, carrera, balanceo de brazos)
+        float pitchRad = (float) Math.toRadians(player.getPitch());
+        model.head.pitch = pitchRad;
+        model.body.pitch = pitchRad * 0.25f;
         model.hat.copyTransform(model.head);
-        model.jacket.copyTransform(model.body);
-        model.rightSleeve.copyTransform(model.rightArm);
-        model.leftSleeve.copyTransform(model.leftArm);
-        model.rightPants.copyTransform(model.rightLeg);
-        model.leftPants.copyTransform(model.leftLeg);
     }
 }

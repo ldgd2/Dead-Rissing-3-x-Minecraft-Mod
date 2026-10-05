@@ -333,6 +333,30 @@ HRESULT __stdcall eDirectX11Hook::Present(IDXGISwapChain * pSwapChain, UINT Sync
 
 LRESULT __stdcall eDirectX11Hook::WndProc(const HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
 {
+	void* pSharedBuf = DR3Crossover::GetSharedBuffer();
+	bool isCrossover = (pSharedBuf && DR3Crossover::IsCrossoverActive());
+	uintptr_t sharedBufAddr = (uintptr_t)pSharedBuf;
+	bool isGuiOpen = isCrossover && (*(uint8_t*)(sharedBufAddr + IPC::Offsets::MC_GUI_OPEN) != 0);
+
+	// 1. Si el inventario de Minecraft está abierto, absorber toda entrada para que Nick no se mueva ni ataque en DR3
+	if (isGuiOpen) {
+		if (uMsg == WM_KEYDOWN) {
+			if (wParam == VK_ESCAPE || wParam == 'E' || wParam == 'e') {
+				*(uint8_t*)(sharedBufAddr + IPC::Offsets::MC_KEY_INVENTORY_TOGGLE) = 1;
+				return true;
+			}
+		}
+		if (uMsg == WM_MOUSEWHEEL) {
+			short zDelta = GET_WHEEL_DELTA_WPARAM(wParam);
+			int8_t scroll = (zDelta > 0) ? -1 : 1;
+			*(int8_t*)(sharedBufAddr + IPC::Offsets::MC_HOTBAR_SCROLL) = scroll;
+			return true;
+		}
+		// Bloquear toda tecla y clic a Dead Rising 3 mientras esté abierto el inventario
+		if (uMsg >= WM_KEYFIRST && uMsg <= WM_KEYLAST) return true;
+		if (uMsg >= WM_MOUSEFIRST && uMsg <= WM_MOUSELAST) return true;
+	}
+
 	switch (uMsg)
 	{
 	case WM_KILLFOCUS:
@@ -343,12 +367,21 @@ LRESULT __stdcall eDirectX11Hook::WndProc(const HWND hWnd, UINT uMsg, WPARAM wPa
 		break;
 	case WM_MOUSEWHEEL:
 	{
-		void* pSharedBuf = DR3Crossover::GetSharedBuffer();
-		if (pSharedBuf && DR3Crossover::IsCrossoverActive()) {
-			uintptr_t sharedBufAddr = (uintptr_t)pSharedBuf;
+		if (isCrossover) {
 			short zDelta = GET_WHEEL_DELTA_WPARAM(wParam);
 			int8_t scroll = (zDelta > 0) ? -1 : 1;
 			*(int8_t*)(sharedBufAddr + IPC::Offsets::MC_HOTBAR_SCROLL) = scroll;
+		}
+		break;
+	}
+	case WM_RBUTTONDOWN:
+	{
+		if (isCrossover) {
+			bool isMcItem = (*(uint8_t*)(sharedBufAddr + IPC::Offsets::ACTIVE_HELD_ITEM_IS_MC) != 0);
+			if (isMcItem) {
+				*(uint8_t*)(sharedBufAddr + IPC::Offsets::MC_ACTION_RIGHT_CLICK) = 1;
+				return true; // Bloquear a DR3 para que no haga golpe pesado ni apunte con bloques o comida de MC
+			}
 		}
 		break;
 	}
@@ -359,18 +392,22 @@ LRESULT __stdcall eDirectX11Hook::WndProc(const HWND hWnd, UINT uMsg, WPARAM wPa
 			TheMenu->OnToggleHUD();
 		if (wParam == SettingsMgr->iToggleSlowMoKey)
 			TheMenu->OnToggleSlowMotion();
-		// Tecla Escape para cerrar GUI de Minecraft
-		if (wParam == VK_ESCAPE)
-		{
-			void* pSharedBuf = DR3Crossover::GetSharedBuffer();
-			if (pSharedBuf && DR3Crossover::IsCrossoverActive()) {
-				uintptr_t sharedBufAddr = (uintptr_t)pSharedBuf;
-				if (*(uint8_t*)(sharedBufAddr + IPC::Offsets::MC_GUI_OPEN) != 0) {
-					*(uint8_t*)(sharedBufAddr + IPC::Offsets::MC_KEY_INVENTORY_TOGGLE) = 1;
-					return true; // Consumir ESC para no activar pausa de DR3
-				}
+
+		// Tecla 'E' para abrir inventario: consumir para que Nick no recoja ítems en DR3
+		if (isCrossover && (wParam == 'E' || wParam == 'e')) {
+			*(uint8_t*)(sharedBufAddr + IPC::Offsets::MC_KEY_INVENTORY_TOGGLE) = 1;
+			return true;
+		}
+
+		// Tecla 'Q' con ítem de Minecraft: consumir para que DR3 no ejecute ataque pesado
+		if (isCrossover && (wParam == 'Q' || wParam == 'q')) {
+			bool isMcItem = (*(uint8_t*)(sharedBufAddr + IPC::Offsets::ACTIVE_HELD_ITEM_IS_MC) != 0);
+			if (isMcItem) {
+				*(uint8_t*)(sharedBufAddr + IPC::Offsets::MC_ACTION_Q_TRIGGER) = 1;
+				return true;
 			}
 		}
+
 		// El Interruptor de Realidades: Hotkey '.' (VK_OEM_PERIOD / 0xBE / VK_DECIMAL)
 		if (wParam == VK_OEM_PERIOD || wParam == 0xBE || wParam == VK_DECIMAL)
 		{
