@@ -491,9 +491,44 @@ namespace DR3Crossover {
         Hooked_WeaponConditionCheck(pWeaponEntity);
     }
 
+    static void* ResolveNickCharacter() {
+        if (s_pLocalCharacter && !IsBadReadPtr(s_pLocalCharacter, 0x100)) {
+            return s_pLocalCharacter;
+        }
+        __try {
+            cGame* pGame = GetGame();
+            if (pGame && !IsBadReadPtr(pGame, 0x150)) {
+                for (size_t off = 0; off <= 0x140; off += sizeof(void*)) {
+                    void* pCandidate = *(void**)((uintptr_t)pGame + off);
+                    if (pCandidate && !IsBadReadPtr(pCandidate, 0x400)) {
+                        uintptr_t* pSkel = (uintptr_t*)((uintptr_t)pCandidate + 0x3A0);
+                        if (pSkel && !IsBadReadPtr(pSkel, sizeof(uintptr_t)) && *pSkel && !IsBadReadPtr((void*)*pSkel, 0x60)) {
+                            s_pLocalCharacter = pCandidate;
+                            return pCandidate;
+                        }
+                        for (size_t innerOff = 0x80; innerOff <= 0x200; innerOff += sizeof(void*)) {
+                            void* pInner = *(void**)((uintptr_t)pCandidate + innerOff);
+                            if (pInner && !IsBadReadPtr(pInner, 0x400)) {
+                                uintptr_t* pInnerSkel = (uintptr_t*)((uintptr_t)pInner + 0x3A0);
+                                if (pInnerSkel && !IsBadReadPtr(pInnerSkel, sizeof(uintptr_t)) && *pInnerSkel && !IsBadReadPtr((void*)*pInnerSkel, 0x60)) {
+                                    s_pLocalCharacter = pInner;
+                                    return pInner;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        } __except (EXCEPTION_EXECUTE_HANDLER) {}
+        return nullptr;
+    }
+
     void ProcessPlayerAndCamera() {
         if (!g_pSharedBuf) return;
         uintptr_t buf = (uintptr_t)g_pSharedBuf;
+
+        // Auto-resolver puntero de Nick Ramos en MT Framework si aún no se ha obtenido
+        ResolveNickCharacter();
 
         // 1. Obtener cViewport del motor MT Framework de DR3
         cViewport* view = nullptr;
@@ -523,10 +558,10 @@ namespace DR3Crossover {
             if (s_pLocalCharacter && !IsBadReadPtr(s_pLocalCharacter, 0x100)) {
                 __try {
                     float* nickPos = (float*)((uintptr_t)s_pLocalCharacter + 0x40);
-                    if (!IsBadReadPtr(nickPos, sizeof(float) * 3)) {
-                        mcX = nickPos[0] / 100.0f;
-                        mcY = 65.0f; // Anclado firmemente al piso de barreras para prevenir caídas al vacío
-                        mcZ = nickPos[1] / 100.0f;
+                    if (!IsBadReadPtr(nickPos, sizeof(float) * 3) && (nickPos[0] != 0.0f || nickPos[2] != 0.0f)) {
+                        mcX = nickPos[0];
+                        mcY = 65.0f; // Anclado firmemente al piso de juego
+                        mcZ = nickPos[2]; // Z es el índice 2 en Vector3 (X, Y, Z)
                         gotNickPos = true;
                     }
                 } __except (EXCEPTION_EXECUTE_HANDLER) {}

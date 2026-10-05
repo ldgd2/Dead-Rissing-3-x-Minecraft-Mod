@@ -202,11 +202,24 @@ public class PlayerManager {
     public void applyRetargetingBones(AbstractClientPlayerEntity player, PlayerEntityModel<?> model) {
         if (ipc == null || !ipc.isConnected() || !isThirdPerson()) return;
 
-        // 1. Anular el balanceo procedural de extremidades nativo de Minecraft
-        player.limbAnimator.setSpeed(0.0f);
-
-        // 2. Extraer rotaciones de huesos desde Memoria Compartida
+        // 1. Extraer rotaciones de huesos desde Memoria Compartida
         BoneRetargetingData bones = ipc.readBoneRetargeting();
+
+        // Si los huesos aún no tienen datos de cinemática de DR3 (rotaciones en 0),
+        // permitir que Steve use sus animaciones naturales de caminata y carrera de Minecraft
+        boolean hasSkeletonData = (bones.rightArm.pitch != 0.0f || bones.rightArm.yaw != 0.0f ||
+                                   bones.leftArm.pitch != 0.0f  || bones.leftArm.yaw != 0.0f  ||
+                                   bones.rightLeg.pitch != 0.0f || bones.leftLeg.pitch != 0.0f);
+
+        if (!hasSkeletonData) {
+            float pitchRad = (float) Math.toRadians(player.getPitch());
+            model.head.pitch = pitchRad;
+            model.body.pitch = pitchRad * 0.35f;
+            return;
+        }
+
+        // 2. Si hay datos reales de Mocap de Dead Rising 3, inyectamos la cinemática directa
+        player.limbAnimator.setSpeed(0.0f);
 
         // 3. Inyectar rotaciones en los pivotes de las 6 cajas principales
         // Cabeza

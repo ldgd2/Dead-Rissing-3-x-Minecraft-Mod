@@ -1,9 +1,11 @@
-# Dead Rising 3 x Minecraft: Symbiosis Crossover (85% Feature Complete)
+# Dead Rising 3 x Minecraft: Symbiosis Crossover
 
 [![Minecraft](https://img.shields.io/badge/Minecraft-1.20.1%20Fabric-orange.svg)]()
 [![Dead%20Rising%203](https://img.shields.io/badge/Dead%20Rising%203-PC%20x64%20DirectX%2011-blue.svg)]()
 [![Platform](https://img.shields.io/badge/Platform-Windows%20x64-lightgrey.svg)]()
 [![IPC](https://img.shields.io/badge/IPC-Win32%20Shared%20Memory-purple.svg)]()
+
+![Demostración In-Game del Crossover](images/ingame.jpeg)
 
 Proyecto de ingeniería inversa de bajo nivel, inyección nativa en memoria (x64) y comunicación inter-proceso (IPC) en tiempo real que integra de manera simbiótica el motor **MT Framework** de **Dead Rising 3** (Capcom) con el cliente Java de **Minecraft** (**Fabric Loader 1.20.1**).
 
@@ -13,23 +15,33 @@ Minecraft deja de ser un juego independiente para transformarse en una **capa in
 
 ## 1. Novedades y Estado Actual 
 
-###  Renderizado Visual 100% Transparente
-- **Eliminación de la Viñeta Vanilla:** En versiones anteriores, Minecraft oscurecía toda la pantalla dejando visibles solo las casillas de la hotbar debido al shader de viñeta (`renderVignetteOverlay`), que forzaba el canal alfa a 1.0 (opaco). Mediante [`MixinInGameHud`](modMinecraft/src/main/java/com/crossover/mixins/MixinInGameHud.java) y [`MixinFramebuffer`](modMinecraft/src/main/java/com/crossover/mixins/MixinFramebuffer.java), se anularon los shaders de viñeta, portales y catalejos, garantizando un **Canal Alfa = 0.0 puro** en todo el espacio vacío. El mundo 3D de Dead Rising 3 ahora se aprecia con total nitidez y sin parches negros.
-- **Ventana de Inventario Flotante:** [`MixinScreen`](modMinecraft/src/main/java/com/crossover/mixins/MixinScreen.java) suprime el oscurecimiento de fondo (`renderBackground`), permitiendo que al abrir el inventario (**tecla 'E'**), la interfaz gráfica de Minecraft flote transparentemente sobre Los Perdidos sin congelar el juego.
+###  Renderizado Visual 
+- **Eliminación Total de la Viñeta Vanilla:** Minecraft ya no oscurece la pantalla ni limita la visibilidad a las casillas de la hotbar. Gracias a [`MixinInGameHud`](modMinecraft/src/main/java/com/crossover/mixins/MixinInGameHud.java) y [`MixinFramebuffer`](modMinecraft/src/main/java/com/crossover/mixins/MixinFramebuffer.java), se anularon los shaders de viñeta (`renderVignetteOverlay`), catalejos y portales, garantizando un **Canal Alfa = 0.0 puro** en todo el espacio vacío. El mundo 3D de Dead Rising 3 se aprecia nítido y fluido.
+- **Ventana de Inventario Flotante:** [`MixinScreen`](modMinecraft/src/main/java/com/crossover/mixins/MixinScreen.java) suprime el oscurecimiento de fondo (`renderBackground`), de modo que al abrir el inventario (**tecla 'E'**), la interfaz gráfica de Minecraft flota limpiamente sobre Los Perdidos.
 
-###  Sincronización de Inventarios y Armas Activas en Tiempo Real (falta solucionar errores)
-- **Equipamiento Directo en Mano:** Al recoger cualquier arma del suelo en Dead Rising 3, [`ItemManager`](modMinecraft/src/main/java/com/crossover/player/item/ItemManager.java) inyecta el arma directamente en la **mano activa de Steve (`selectedSlot`)**. Si ya sostenías un objeto (como una Espada o Manzana Dorada de Minecraft), este se resguarda automáticamente en un slot libre del inventario sin perderse.
-- **Monitoreo Continuo a 60 FPS:** [`CrossoverHooks`](DR3Hook/DR3Hook/plugin/CrossoverHooks.cpp) escanea el arma equipada por Nick Ramos en MT Framework, volcando en memoria compartida su identificador (`weaponId`), durabilidad actual, durabilidad máxima y munición.
-- **Supresión de Armas Fantasma / Flotantes:** Cuando el jugador pasa a **Primera Persona** o selecciona un ítem nativo de Minecraft en la hotbar (`ACTIVE_HELD_ITEM_IS_MC == true`), el hook de C++ apaga la bandera de visibilidad del arma en DR3 (`offset + 0x30 = 0`), eliminando cualquier arma flotante y permitiendo que la mano de Steve y sus herramientas sean las únicas visibles.
-- **Desgaste y Rotura Realista:** La barra de condición del ítem de Dead Rising 3 en la hotbar se actualiza cuadro a cuadro. Si la durabilidad llega a 0, se reproduce el efecto de sonido de rotura de Minecraft y el arma se retira de la mano.
+### ⚔️ Manipulación Universal de Armas y Combate
+- **Ataque y Balanceo Activo:** El clic izquierdo del ratón ahora dispara órdenes de ataque universales en 1ra y 3ra persona. Funciona para todas las armas: espadas y herramientas de Minecraft, armas importadas de Dead Rising 3 y combate con los puños, ejecutando el balanceo del brazo (`swingHand`) y causando daño a entidades o zombies.
+- **Lanzamiento de Proyectiles Havok ('Q'):** Arrojar cualquier ítem de Minecraft o Dead Rising 3 con la tecla 'Q' lo transforma en un objeto balístico con físicas Havok en Los Perdidos, dañando a los no-muertos.
 
-###  Movimiento y Cámara Unificada (1ra y 3ra Persona) (falta solucionar errores)
-- **Mira y Rotación Suave en Primera Persona:** Se sincronizan continuamente los ángulos de inclinación (`Pitch`) y orientación (`Yaw`) de la cámara de Dead Rising 3 con la cabeza y vista de Steve en todos los modos de cámara, logrando que en primera persona el arma y la mano apunten de forma instantánea a donde se dirija el ratón.
-- **Puente de Teclado y Ratón:** Soporte para controles directos transmitidos desde Dead Rising 3 hacia Minecraft: `WASD` para desplazamiento, `Espacio` para salto, `Shift` para agacharse, teclas numéricas `1` a `9` y rueda del ratón para selección de slots de la hotbar.
+###  Colocación y Minado de Bloques en Tiempo Real
+- **Construcción en 3D:** Al sostener cualquier bloque de Minecraft en la mano, hacer clic derecho coloca el bloque en el mundo 3D frente al jugador. [`MixinWorldRenderer`](modMinecraft/src/main/java/com/crossover/mixins/MixinWorldRenderer.java) permite el renderizado de vóxeles colocados por el jugador sobre el escenario de Dead Rising 3.
+- **Minado y Destrucción:** El clic izquierdo sobre bloques colocados permite minarlos y romperlos interactivamente.
 
-###  Salud y Muerte Cruzada Bidireccional (falta solucionar errores)
-- [`HealthManager`](modMinecraft/src/main/java/com/crossover/player/health/HealthManager.java) vincula los puntos de vida de Nick Ramos con los 20 corazones de Steve. Si Nick es atacado por zombies o psicópatas, los corazones de Steve disminuyen en tiempo real.
-- Si cualquiera de los dos personajes muere, el otro fallece inmediatamente en su respectivo motor, reapareciendo en el spawn con el inventario intacto.
+###  Arsenal de Dead Rising 3 en el Menú Creativo de Minecraft
+- **Acceso Directo desde la Pestaña de Combate:** [`ModItems`](modMinecraft/src/main/java/com/crossover/player/item/ModItems.java) expone directamente en el menú creativo de Minecraft las armas icónicas de Dead Rising 3:
+  - *Motosierra de Los Perdidos*
+  - *Maza Sledgehammer*
+  - *Sable de Luz Láser*
+  - *Defiler Sledge-Axe*
+  - *Freedom Bear Sentry*
+  - *Espada Dragón Llameante*
+  - *Super B.F.G. 9000*
+  - *Bate con Clavos*
+- Al tomarlas del inventario, se equipan automáticamente en la hotbar con sus iconos VRAM originales, etiquetas NBT y barras de durabilidad activas.
+
+###  Retargeting Esquelético y Animación Fluida en 3ra Persona
+- **Sincronización Métrica de Coordenadas:** Se corrigió el posicionamiento espacial de Steve, anclándolo de forma exacta a las coordenadas de Nick Ramos en MT Framework.
+- **Cinemática Dinámica:** Cuando Dead Rising 3 transmite datos de huesos, los cuaterniones se aplican a la cabeza, torso, brazos y piernas de Steve; en caso de ausencia de mocap o movimiento procedural, Steve conserva sus animaciones naturales de caminata y carrera de Minecraft sin congelarse como maniquí estático.
 
 ---
 

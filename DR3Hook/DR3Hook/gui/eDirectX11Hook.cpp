@@ -209,12 +209,12 @@ HRESULT __stdcall eDirectX11Hook::Present(IDXGISwapChain * pSwapChain, UINT Sync
 	}
 	s_lastQDown = currentQDown;
 
-	// Interceptor de Clic Derecho (Comportamiento nativo Minecraft para comida/bloques)
+	// Interceptor de Clic Derecho (Comportamiento nativo Minecraft para comida/bloques/uso)
 	static bool s_lastRBtnDown = false;
 	bool currentRBtnDown = (GetAsyncKeyState(VK_RBUTTON) & 0x8000) != 0;
 	if (currentRBtnDown && !s_lastRBtnDown && pSharedBuf && DR3Crossover::IsCrossoverActive()) {
-		bool isMcItem = (*(uint8_t*)(sharedBufAddr + IPC::Offsets::ACTIVE_HELD_ITEM_IS_MC) != 0);
-		if (isMcItem) {
+		bool isGuiOpen = (*(uint8_t*)(sharedBufAddr + IPC::Offsets::MC_GUI_OPEN) != 0);
+		if (!isGuiOpen) {
 			*(uint8_t*)(sharedBufAddr + IPC::Offsets::MC_ACTION_RIGHT_CLICK) = 1;
 		}
 	}
@@ -291,7 +291,7 @@ HRESULT __stdcall eDirectX11Hook::Present(IDXGISwapChain * pSwapChain, UINT Sync
 		}
 	}
 
-	// Puente de Movimiento y Ataque para 1ra Persona en Minecraft
+	// Puente de Movimiento y Entrada para Minecraft
 	if (pSharedBuf && DR3Crossover::IsCrossoverActive()) {
 		uint16_t camMode = *(uint16_t*)(sharedBufAddr + IPC::Offsets::CAMERA_MODE);
 		bool isGuiOpen = (*(uint8_t*)(sharedBufAddr + IPC::Offsets::MC_GUI_OPEN) != 0);
@@ -302,18 +302,15 @@ HRESULT __stdcall eDirectX11Hook::Present(IDXGISwapChain * pSwapChain, UINT Sync
 			*(uint8_t*)(sharedBufAddr + IPC::Offsets::MC_INPUT_D) = (GetAsyncKeyState('D') & 0x8000) ? 1 : 0;
 			*(uint8_t*)(sharedBufAddr + IPC::Offsets::MC_INPUT_JUMP) = (GetAsyncKeyState(VK_SPACE) & 0x8000) ? 1 : 0;
 			*(uint8_t*)(sharedBufAddr + IPC::Offsets::MC_INPUT_SNEAK) = (GetAsyncKeyState(VK_SHIFT) & 0x8000) ? 1 : 0;
-
-			// Clic Izquierdo para atacar / usar ítem de Minecraft
-			static bool s_lastLAttackDown = false;
-			bool currentLAttackDown = (GetAsyncKeyState(VK_LBUTTON) & 0x8000) != 0;
-			if (currentLAttackDown && !s_lastLAttackDown) {
-				bool isMcItem = (*(uint8_t*)(sharedBufAddr + IPC::Offsets::ACTIVE_HELD_ITEM_IS_MC) != 0);
-				if (isMcItem) {
-					*(uint8_t*)(sharedBufAddr + IPC::Offsets::MC_ACTION_LEFT_CLICK) = 1;
-				}
-			}
-			s_lastLAttackDown = currentLAttackDown;
 		}
+
+		// Clic Izquierdo para atacar / blandir arma en Minecraft (en 1ra y 3ra persona)
+		static bool s_lastLAttackDown = false;
+		bool currentLAttackDown = (GetAsyncKeyState(VK_LBUTTON) & 0x8000) != 0;
+		if (currentLAttackDown && !s_lastLAttackDown && !isGuiOpen) {
+			*(uint8_t*)(sharedBufAddr + IPC::Offsets::MC_ACTION_LEFT_CLICK) = 1;
+		}
+		s_lastLAttackDown = currentLAttackDown;
 	}
 
 	static Graphics::DX11OverlayRenderer ms_mcOverlay;

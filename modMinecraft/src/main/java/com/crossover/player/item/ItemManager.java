@@ -39,25 +39,63 @@ public class ItemManager {
             }
         }
 
-        // 3. Procesar orden de Clic Izquierdo (Ataque con espada / herramienta de Minecraft)
+        // 3. Procesar orden de Clic Izquierdo (Ataque con espada / herramienta / arma DR3 / puño / minar bloques)
         if (ipc.consumeActionLeftClick()) {
-            if (isMcItem) {
-                net.minecraft.client.MinecraftClient client = net.minecraft.client.MinecraftClient.getInstance();
-                if (client.interactionManager != null) {
-                    player.swingHand(net.minecraft.util.Hand.MAIN_HAND);
-                    if (client.targetedEntity != null) {
-                        client.interactionManager.attackEntity(player, client.targetedEntity);
+            net.minecraft.client.MinecraftClient client = net.minecraft.client.MinecraftClient.getInstance();
+            player.swingHand(net.minecraft.util.Hand.MAIN_HAND);
+            if (client.interactionManager != null && client.targetedEntity != null) {
+                client.interactionManager.attackEntity(player, client.targetedEntity);
+            } else if (client.crosshairTarget instanceof net.minecraft.util.hit.BlockHitResult bHit) {
+                net.minecraft.util.math.BlockPos hitPos = bHit.getBlockPos();
+                if (!player.getWorld().isAir(hitPos) && player.getWorld().getBlockState(hitPos).getBlock() != net.minecraft.block.Blocks.BARRIER) {
+                    if (player.isCreative()) {
+                        player.getWorld().breakBlock(hitPos, false);
+                    } else if (client.interactionManager != null) {
+                        client.interactionManager.attackBlock(hitPos, bHit.getSide());
                     }
                 }
             }
         }
 
-        // 4. Procesar orden de Clic Derecho nativo disparada desde Dead Rising 3 (Comida / Bloques / Escudo)
+        // 4. Procesar orden de Clic Derecho (Comida / Colocación de Bloques / Uso de Armas)
         if (ipc.readActionRightClick()) {
             ipc.consumeActionRightClick();
-            if (isMcItem) {
-                net.minecraft.client.MinecraftClient client = net.minecraft.client.MinecraftClient.getInstance();
-                if (client.interactionManager != null) {
+            net.minecraft.client.MinecraftClient client = net.minecraft.client.MinecraftClient.getInstance();
+            ItemStack held = player.getMainHandStack();
+            if (held.getItem() instanceof net.minecraft.item.BlockItem blockItem) {
+                net.minecraft.util.math.BlockPos placePos = null;
+                if (client != null && client.crosshairTarget instanceof net.minecraft.util.hit.BlockHitResult bHit) {
+                    net.minecraft.util.math.BlockPos hit = bHit.getBlockPos();
+                    if (!player.getWorld().isAir(hit)) {
+                        placePos = hit.offset(bHit.getSide());
+                    }
+                }
+                if (placePos == null) {
+                    net.minecraft.util.math.Vec3d eyePos = player.getEyePos();
+                    net.minecraft.util.math.Vec3d lookVec = player.getRotationVector();
+                    net.minecraft.util.math.Vec3d target = eyePos.add(lookVec.multiply(2.5));
+                    placePos = new net.minecraft.util.math.BlockPos(
+                        (int) Math.floor(target.x),
+                        (int) Math.floor(target.y),
+                        (int) Math.floor(target.z)
+                    );
+                }
+                net.minecraft.block.Block block = blockItem.getBlock();
+                player.getWorld().setBlockState(placePos, block.getDefaultState(), 3);
+                if (com.crossover.core.CrossoverMod.worldSyncManager != null) {
+                    com.crossover.core.CrossoverMod.worldSyncManager.onBlockPlaced(
+                        placePos.getX(), placePos.getY(), placePos.getZ(),
+                        net.minecraft.registry.Registries.BLOCK.getId(block).toString(),
+                        block.getDefaultState()
+                    );
+                }
+                player.swingHand(net.minecraft.util.Hand.MAIN_HAND);
+                player.playSound(block.getDefaultState().getSoundGroup().getPlaceSound(), 1.0f, 1.0f);
+                if (!player.isCreative()) {
+                    held.decrement(1);
+                }
+            } else {
+                if (client != null && client.interactionManager != null) {
                     client.interactionManager.interactItem(player, net.minecraft.util.Hand.MAIN_HAND);
                     player.swingHand(net.minecraft.util.Hand.MAIN_HAND);
                 }

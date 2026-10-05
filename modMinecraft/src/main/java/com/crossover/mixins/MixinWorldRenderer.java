@@ -21,11 +21,9 @@ public class MixinWorldRenderer {
         ci.cancel(); // El fondo se vuelve Alfa 0.0f (100% Transparente)
     }
 
-    // 2. Apagamos el Terreno (Chunks/Vóxeles). 
-    @Inject(method = "renderLayer", at = @At("HEAD"), cancellable = true)
-    private void onRenderLayer(CallbackInfo ci) {
-        ci.cancel(); 
-    }
+    // 2. Nota: El terreno en mundo Void no tiene biomas sólidos, pero permitimos que renderLayer
+    // dibuje los bloques que el jugador coloque en el mundo (madera, piedra, TNT, etc.)
+
 
     // 3. Apagamos las nubes para que no interfieran con Los Perdidos.
     @Inject(method = "renderClouds", at = @At("HEAD"), cancellable = true)
