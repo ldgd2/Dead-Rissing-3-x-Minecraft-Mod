@@ -6,9 +6,12 @@
 #include <Psapi.h>
 #include "../gui/kiero/minhook/include/MinHook.h"
 #include "../utils/addr.h"
+#include "../utils/MemoryMgr.h"
 #include "../game/misc.h"
 #include "../game/Game.h"
 #include "../game/Viewport.h"
+
+using namespace Memory::VP;
 
 namespace DR3Crossover {
 
@@ -17,6 +20,31 @@ namespace DR3Crossover {
     static void* g_pSharedBuf = nullptr;
     static void* s_pLocalCharacter = nullptr;
     static float s_lastSyncedDr3Health = -1.0f;
+
+    // Helper: Parche dinámico para secuestrar la cámara de MT Framework en 1ra Persona
+    static void SetFirstPersonCameraPatch(bool enable) {
+        static bool s_lastPatched = false;
+        if (enable == s_lastPatched) return;
+        s_lastPatched = enable;
+
+        if (enable) {
+            Nop(_addr(0x1408A6A16), 3);
+            Nop(_addr(0x1408A6A20), 3);
+            Nop(_addr(0x1408A6A2D), 3);
+        } else {
+            Patch<char>(_addr(0x1408A6A16),     0x89);
+            Patch<char>(_addr(0x1408A6A16) + 1, 0x4F);
+            Patch<char>(_addr(0x1408A6A16) + 2, 0x28);
+
+            Patch<char>(_addr(0x1408A6A20),     0x89);
+            Patch<char>(_addr(0x1408A6A20) + 1, 0x4F);
+            Patch<char>(_addr(0x1408A6A20) + 2, 0x2C);
+
+            Patch<char>(_addr(0x1408A6A2D),     0x89);
+            Patch<char>(_addr(0x1408A6A2D) + 1, 0x4F);
+            Patch<char>(_addr(0x1408A6A2D) + 2, 0x30);
+        }
+    }
 
     struct alignas(16) Matrix4x4 {
         float m[4][4];
@@ -555,6 +583,10 @@ namespace DR3Crossover {
             float mcX = 0.0f, mcY = 65.0f, mcZ = 0.0f;
             bool gotNickPos = false;
 
+            if (!s_pLocalCharacter || IsBadReadPtr(s_pLocalCharacter, 0x100)) {
+                s_pLocalCharacter = ResolveNickCharacter();
+            }
+
             if (s_pLocalCharacter && !IsBadReadPtr(s_pLocalCharacter, 0x100)) {
                 __try {
                     float* nickPos = (float*)((uintptr_t)s_pLocalCharacter + 0x40);
@@ -614,15 +646,21 @@ namespace DR3Crossover {
                 *(IPC::Quaternion*)(buf + IPC::Offsets::BONE_R_LEG) = qZero;
                 *(IPC::Quaternion*)(buf + IPC::Offsets::BONE_L_LEG) = qZero;
             }
+
+            // Perspectiva de Cámara: Primera Persona (1) vs Tercera Persona (0)
             uint16_t camMode = *(uint16_t*)(buf + IPC::Offsets::CAMERA_MODE);
-            if (camMode == 1 && gotNickPos && s_bCrossoverActive) {
-                // Modo 1ra Persona: cámara anclada a la altura de los ojos de Nick sin bamboleos
-                __try {
-                    float nickY = *(float*)((uintptr_t)s_pLocalCharacter + 0x44);
-                    view->mCameraPos.X = mcX;
-                    view->mCameraPos.Y = nickY + 1.65f;
-                    view->mCameraPos.Z = mcZ;
-                } __except (EXCEPTION_EXECUTE_HANDLER) {}
+            if (camMode == 1 && s_bCrossoverActive) {
+                SetFirstPersonCameraPatch(true);
+                if (gotNickPos && s_pLocalCharacter && !IsBadReadPtr(s_pLocalCharacter, 0x50)) {
+                    __try {
+                        float nickY = *(float*)((uintptr_t)s_pLocalCharacter + 0x44);
+                        view->mCameraPos.X = mcX;
+                        view->mCameraPos.Y = nickY + 1.65f;
+                        view->mCameraPos.Z = mcZ;
+                    } __except (EXCEPTION_EXECUTE_HANDLER) {}
+                }
+            } else {
+                SetFirstPersonCameraPatch(false);
             }
         }
 
@@ -650,12 +688,15 @@ namespace DR3Crossover {
         uint8_t mcHealthChanged = *(uint8_t*)(buf + IPC::Offsets::MC_HEALTH_CHANGED);
         if (mcHealthChanged == 1) {
             *(uint8_t*)(buf + IPC::Offsets::MC_HEALTH_CHANGED) = 0;
-            float mcHealthPercent = *(float*)(buf + IPC::Offsets::HEALTH);
+            float rawHp = *(float*)(buf + IPC::Offsets::DR3_RAW_HEALTH);
+            if (rawHp <= 0.0f) {
+                float mcHealthPercent = *(float*)(buf + IPC::Offsets::HEALTH);
+                rawHp = (mcHealthPercent / 100.0f) * 1000.0f;
+            }
             if (s_pLocalCharacter && !IsBadReadPtr(s_pLocalCharacter, 0x200)) {
                 __try {
-                    float newHp = (mcHealthPercent / 100.0f) * 1000.0f;
-                    *(float*)((uintptr_t)s_pLocalCharacter + 0x1A0) = newHp;
-                    s_lastSyncedDr3Health = newHp;
+                    *(float*)((uintptr_t)s_pLocalCharacter + 0x1A0) = rawHp;
+                    s_lastSyncedDr3Health = rawHp;
                 } __except (EXCEPTION_EXECUTE_HANDLER) {}
             }
         }
@@ -664,14 +705,22 @@ namespace DR3Crossover {
         if (s_pLocalCharacter && !IsBadReadPtr(s_pLocalCharacter, 0x200)) {
             __try {
                 float dr3Hp = *(float*)((uintptr_t)s_pLocalCharacter + 0x1A0);
+                float dr3MaxHp = 1000.0f;
+                float* pMaxHp = (float*)((uintptr_t)s_pLocalCharacter + 0x1A4);
+                if (!IsBadReadPtr(pMaxHp, sizeof(float)) && *pMaxHp >= 500.0f && *pMaxHp <= 20000.0f) {
+                    dr3MaxHp = *pMaxHp;
+                }
+                *(float*)(buf + IPC::Offsets::DR3_MAX_HEALTH) = dr3MaxHp;
+                *(float*)(buf + IPC::Offsets::DR3_RAW_HEALTH) = dr3Hp;
+
                 // Solo validar muerte si previamente se había detectado que Nick tenía vida válida (> 50.0f)
                 if (dr3Hp <= 0.0f && s_lastSyncedDr3Health > 50.0f) {
                     *(uint8_t*)(buf + IPC::Offsets::NICK_DEAD) = 1;
                     *(float*)(buf + IPC::Offsets::HEALTH) = 0.0f;
                     s_lastSyncedDr3Health = 0.0f;
-                } else if (dr3Hp > 0.0f && std::abs(dr3Hp - s_lastSyncedDr3Health) > 10.0f) {
+                } else if (dr3Hp > 0.0f && std::abs(dr3Hp - s_lastSyncedDr3Health) > 1.0f) {
                     s_lastSyncedDr3Health = dr3Hp;
-                    float percent = (dr3Hp / 1000.0f) * 100.0f;
+                    float percent = (dr3Hp / dr3MaxHp) * 100.0f;
                     if (percent > 100.0f) percent = 100.0f;
                     *(float*)(buf + IPC::Offsets::HEALTH) = percent;
                     *(uint8_t*)(buf + IPC::Offsets::DR3_HEALTH_CHANGED) = 1;

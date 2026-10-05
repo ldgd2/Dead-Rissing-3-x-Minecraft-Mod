@@ -2,16 +2,20 @@ package com.crossover.player.health;
 
 import com.crossover.ipc.Win32SharedMemory;
 import net.minecraft.client.network.ClientPlayerEntity;
+import net.minecraft.sound.SoundEvents;
 
 /**
- * Gestor de Salud y Muerte Cruzada (Pilar Vital).
+ * Gestor de Salud, Corazones Dorados (Absorción) y Muerte Cruzada (Pilar Vital).
  * Mantiene sincronizados los puntos de vida de DR3 (Nick Ramos) con los corazones de Steve.
- * Si Nick muere, Steve muere; si Steve muere, Nick muere (manteniendo siempre el inventario).
+ * - 1000 HP base de Nick = 10 Corazones Rojos (20.0 HP de Steve).
+ * - Mejoras de vida de Nick (> 1000 HP) = Corazones Dorados de Absorción (ej. 1500 HP = +5 corazones dorados).
+ * - Si un zombie daña a Nick en DR3, Steve pierde corazones proporcionalmente y reproduce efecto de daño.
+ * - Si Nick o Steve mueren, la muerte es bidireccional respetando el inventario.
  */
 public class HealthManager {
 
     private final Win32SharedMemory ipc;
-    private float lastSyncedMcHealth = 20.0f;
+    private float lastSyncedTotalHealth = 20.0f;
     private boolean wasDead = false;
 
     public HealthManager(Win32SharedMemory ipc) {
@@ -43,7 +47,7 @@ public class HealthManager {
             wasDead = false;
             ipc.writeSteveDead(false);
             ipc.clearNickDead();
-            lastSyncedMcHealth = player.getHealth();
+            lastSyncedTotalHealth = player.getHealth() + player.getAbsorptionAmount();
             System.out.println("[HealthManager] Steve ha reaparecido con vida completa e inventario intacto.");
         }
 
@@ -58,28 +62,72 @@ public class HealthManager {
             return;
         }
 
-        // 3. Sincronización cuando Dead Rising 3 actualiza la vida (Nick recibe daño de zombies/jefes)
+        // 3. Sincronización cuando Dead Rising 3 actualiza la vida (Nick recibe daño de zombies o sube de nivel)
         if (ipc.readDr3HealthChanged()) {
-            float dr3HealthPercent = ipc.readPlayerHealth();
-            if (dr3HealthPercent <= 0.0f) {
+            float dr3MaxHp = ipc.readDr3MaxHealth();
+            if (dr3MaxHp < 100.0f) dr3MaxHp = 1000.0f;
+
+            float dr3Hp = ipc.readDr3RawHealth();
+            if (dr3Hp <= 0.0f) {
+                float dr3HealthPercent = ipc.readPlayerHealth();
+                dr3Hp = (dr3HealthPercent / 100.0f) * dr3MaxHp;
+            }
+
+            if (dr3Hp <= 0.0f) {
                 if (!player.isDead() && !player.isCreative()) {
                     player.kill();
                     wasDead = true;
                 }
                 return;
             }
-            float targetMcHealth = Math.max(1.0f, (dr3HealthPercent / 100.0f) * player.getMaxHealth());
-            player.setHealth(targetMcHealth);
-            lastSyncedMcHealth = targetMcHealth;
+
+            // Cálculo de Corazones Rojos y Corazones Dorados (Absorción)
+            // Base Nick = 1000 HP -> 20.0 HP Steve (10 corazones rojos)
+            // Vida extra por mejoras (> 1000 HP) -> Corazones dorados de absorción (1 corazón dorado = 100 HP DR3 = 2.0 MC HP)
+            float targetRedHealth;
+            float targetAbsorption;
+
+            if (dr3Hp > 1000.0f) {
+                targetRedHealth = 20.0f; // Corazones rojos llenos
+                float extraCurrentHp = dr3Hp - 1000.0f;
+                targetAbsorption = (extraCurrentHp / 1000.0f) * 20.0f;
+            } else {
+                targetAbsorption = 0.0f;
+                targetRedHealth = Math.max(1.0f, (dr3Hp / 1000.0f) * 20.0f);
+            }
+
+            float currentTotal = player.getHealth() + player.getAbsorptionAmount();
+            float newTotal = targetRedHealth + targetAbsorption;
+
+            // Si Steve recibió daño por el golpe del zombie, reproducir sonido y animación de impacto
+            if (newTotal < currentTotal - 0.2f) {
+                player.playSound(SoundEvents.ENTITY_PLAYER_HURT, 1.0f, 1.0f);
+                player.animateDamage(player.getYaw());
+            }
+
+            player.setAbsorptionAmount(targetAbsorption);
+            player.setHealth(targetRedHealth);
+            lastSyncedTotalHealth = targetRedHealth + targetAbsorption;
             return;
         }
 
-        // 4. Sincronización cuando Minecraft actualiza la vida (Steve recibe daño o regenera)
-        float currentMcHealth = player.getHealth();
-        if (Math.abs(currentMcHealth - lastSyncedMcHealth) >= 0.5f) {
-            lastSyncedMcHealth = currentMcHealth;
-            float mcHealthPercent = (currentMcHealth / player.getMaxHealth()) * 100.0f;
-            ipc.writePlayerHealth(mcHealthPercent);
+        // 4. Sincronización cuando Minecraft actualiza la vida (Steve come manzanas doradas, regenera o sufre daño ambiental)
+        float currentTotal = player.getHealth() + player.getAbsorptionAmount();
+        if (Math.abs(currentTotal - lastSyncedTotalHealth) >= 0.5f) {
+            lastSyncedTotalHealth = currentTotal;
+
+            float dr3MaxHp = ipc.readDr3MaxHealth();
+            if (dr3MaxHp < 100.0f) dr3MaxHp = 1000.0f;
+
+            // Reconvertir los corazones actuales de Steve a puntos de vida de DR3
+            float redHpPortion = (player.getHealth() / 20.0f) * 1000.0f;
+            float goldenHpPortion = (player.getAbsorptionAmount() / 20.0f) * 1000.0f;
+            float newDr3Hp = redHpPortion + goldenHpPortion;
+
+            ipc.writeDr3RawHealth(newDr3Hp);
+            float percent = (newDr3Hp / dr3MaxHp) * 100.0f;
+            if (percent > 100.0f) percent = 100.0f;
+            ipc.writePlayerHealth(percent);
         }
     }
 }

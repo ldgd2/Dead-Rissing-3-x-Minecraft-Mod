@@ -29,6 +29,7 @@ public class PlayerManager {
     }
 
     private CameraState currentState = CameraState.THIRD_PERSON;
+    private boolean barrierPlatformInitialized = false;
 
     // Sub-módulos
     public final CameraManager cameraManager;
@@ -124,68 +125,59 @@ public class PlayerManager {
         player.setHeadYaw(yaw);
         player.setBodyYaw(yaw);
 
-        // 7. Sincronización continua de la posición de Steve en el mundo de Minecraft
-        float nickX = ipc.readPlayerX();
-        float nickZ = ipc.readPlayerZ();
+        // 7. Sincronización continua de la posición y renderizado de Steve
+        // Mantener a Steve seguro y anclado en spawn cargado (0.0, 65.0, 0.0)
+        // para garantizar renderizado continuo 100% libre de cuelgues o chunks vacíos
+        player.setNoGravity(true);
+        player.setVelocity(0, 0, 0);
+        player.fallDistance = 0;
+        player.setPos(0.0, 65.0, 0.0);
 
-        if (nickX != 0.0f || nickZ != 0.0f) {
-            double worldX = (double) nickX;
-            double worldZ = (double) nickZ;
-            double worldY = 65.0; // Altura sobre el plano de barreras
-
-            player.setNoGravity(true);
-            player.setVelocity(0, 0, 0);
-            player.fallDistance = 0;
-            player.setPos(worldX, worldY, worldZ);
-
-            // Generar plataforma dinámica de barreras invisibles sólidas bajo los pies de Steve
-            // para permitir movimiento libre en modo supervivencia sin caer al vacío
-            if (player.getWorld() != null) {
-                int px = (int) Math.floor(worldX);
-                int pz = (int) Math.floor(worldZ);
-                for (int dx = -3; dx <= 3; dx++) {
-                    for (int dz = -3; dz <= 3; dz++) {
-                        net.minecraft.util.math.BlockPos bp = new net.minecraft.util.math.BlockPos(px + dx, 64, pz + dz);
-                        if (player.getWorld().isAir(bp)) {
-                            player.getWorld().setBlockState(bp, net.minecraft.block.Blocks.BARRIER.getDefaultState(), 2);
-                        }
+        // Inicializar plataforma de barreras sólidas bajo los pies de Steve una sola vez
+        if (!barrierPlatformInitialized && player.getWorld() != null) {
+            barrierPlatformInitialized = true;
+            for (int dx = -2; dx <= 2; dx++) {
+                for (int dz = -2; dz <= 2; dz++) {
+                    net.minecraft.util.math.BlockPos bp = new net.minecraft.util.math.BlockPos(dx, 64, dz);
+                    if (player.getWorld().isAir(bp)) {
+                        player.getWorld().setBlockState(bp, net.minecraft.block.Blocks.BARRIER.getDefaultState(), 2);
                     }
                 }
             }
         }
 
+        // 8. Reenvío continuo de controles WASD, salto y agachado desde DR3 hacia Minecraft (1ra y 3ra persona)
+        boolean fwd = ipc.readInputW();
+        boolean back = ipc.readInputS();
+        boolean left = ipc.readInputA();
+        boolean right = ipc.readInputD();
+        boolean jump = ipc.readInputJump();
+        boolean sneak = ipc.readInputSneak();
+
+        player.input.pressingForward = fwd;
+        player.input.pressingBack = back;
+        player.input.pressingLeft = left;
+        player.input.pressingRight = right;
+        player.input.jumping = jump;
+        player.input.sneaking = sneak;
+
+        float movementForward = 0.0f;
+        if (fwd) movementForward += 1.0f;
+        if (back) movementForward -= 1.0f;
+        player.input.movementForward = movementForward;
+
+        float movementSideways = 0.0f;
+        if (left) movementSideways += 1.0f;
+        if (right) movementSideways -= 1.0f;
+        player.input.movementSideways = movementSideways;
+
+        // Animar el balanceo clásico y movimiento de piernas/brazos de Steve
+        if (fwd || back || left || right) {
+            float speed = sneak ? 0.3f : 0.6f;
+            player.limbAnimator.updateLimbs(speed, 0.4f);
+        }
+
         if (currentState == CameraState.FIRST_PERSON) {
-            // Minecraft es el Master (WASD + Salto transmitido desde DR3).
-            boolean fwd = ipc.readInputW();
-            boolean back = ipc.readInputS();
-            boolean left = ipc.readInputA();
-            boolean right = ipc.readInputD();
-            boolean jump = ipc.readInputJump();
-            boolean sneak = ipc.readInputSneak();
-
-            player.input.pressingForward = fwd;
-            player.input.pressingBack = back;
-            player.input.pressingLeft = left;
-            player.input.pressingRight = right;
-            player.input.jumping = jump;
-            player.input.sneaking = sneak;
-
-            float movementForward = 0.0f;
-            if (fwd) movementForward += 1.0f;
-            if (back) movementForward -= 1.0f;
-            player.input.movementForward = movementForward;
-
-            float movementSideways = 0.0f;
-            if (left) movementSideways += 1.0f;
-            if (right) movementSideways -= 1.0f;
-            player.input.movementSideways = movementSideways;
-
-            // Enviamos posición de Steve para teletransportar la cápsula de Nick en DR3
-            ipc.writePlayerPosition(
-                (float) player.getX(), 
-                (float) player.getY(), 
-                (float) player.getZ()
-            );
             cameraManager.syncCamera(currentState, player.getPitch(), player.getYaw(), 0.0f, 70.0f);
         }
     }

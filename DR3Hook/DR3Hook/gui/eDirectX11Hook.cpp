@@ -293,9 +293,8 @@ HRESULT __stdcall eDirectX11Hook::Present(IDXGISwapChain * pSwapChain, UINT Sync
 
 	// Puente de Movimiento y Entrada para Minecraft
 	if (pSharedBuf && DR3Crossover::IsCrossoverActive()) {
-		uint16_t camMode = *(uint16_t*)(sharedBufAddr + IPC::Offsets::CAMERA_MODE);
 		bool isGuiOpen = (*(uint8_t*)(sharedBufAddr + IPC::Offsets::MC_GUI_OPEN) != 0);
-		if (camMode == 1 && !isGuiOpen) {
+		if (!isGuiOpen) {
 			*(uint8_t*)(sharedBufAddr + IPC::Offsets::MC_INPUT_W) = (GetAsyncKeyState('W') & 0x8000) ? 1 : 0;
 			*(uint8_t*)(sharedBufAddr + IPC::Offsets::MC_INPUT_A) = (GetAsyncKeyState('A') & 0x8000) ? 1 : 0;
 			*(uint8_t*)(sharedBufAddr + IPC::Offsets::MC_INPUT_S) = (GetAsyncKeyState('S') & 0x8000) ? 1 : 0;

@@ -139,6 +139,10 @@ public class Win32SharedMemory {
     public static final long OFFSET_MC_INPUT_SNEAK = 0x22F;
     public static final long OFFSET_MC_ACTION_LEFT_CLICK = 0x230;
 
+    // Sincronización precisa de Puntos de Vida y Corazones Dorados (Absorción)
+    public static final long OFFSET_DR3_MAX_HEALTH = 0x234;
+    public static final long OFFSET_DR3_RAW_HEALTH = 0x238;
+
     private int localUseCounter = 0;
     private int localThrowCounter = 0;
     private int localBuildingCounter = 0;
@@ -276,6 +280,27 @@ public class Win32SharedMemory {
             return true;
         }
         return false;
+    }
+
+    public float readDr3MaxHealth() {
+        if (baseAddress == 0) return 1000.0f;
+        float maxHp = unsafe.getFloat(baseAddress + OFFSET_DR3_MAX_HEALTH);
+        return maxHp >= 100.0f ? maxHp : 1000.0f;
+    }
+
+    public float readDr3RawHealth() {
+        if (baseAddress == 0) return 1000.0f;
+        return unsafe.getFloat(baseAddress + OFFSET_DR3_RAW_HEALTH);
+    }
+
+    public void writeDr3MaxHealth(float maxHealth) {
+        if (baseAddress == 0) return;
+        unsafe.putFloat(baseAddress + OFFSET_DR3_MAX_HEALTH, maxHealth);
+    }
+
+    public void writeDr3RawHealth(float rawHealth) {
+        if (baseAddress == 0) return;
+        unsafe.putFloat(baseAddress + OFFSET_DR3_RAW_HEALTH, rawHealth);
     }
 
     public void writeSteveDead(boolean dead) {

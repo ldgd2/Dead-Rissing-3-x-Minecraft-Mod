@@ -121,6 +121,10 @@ namespace IPC {
         constexpr size_t MC_INPUT_JUMP = 0x22E;           // uint8_t (1 byte: 1 = Espacio presionado)
         constexpr size_t MC_INPUT_SNEAK = 0x22F;          // uint8_t (1 byte: 1 = Shift presionado)
         constexpr size_t MC_ACTION_LEFT_CLICK = 0x230;    // uint8_t (1 byte: 1 = Ataque/Golpe con ítem de Minecraft)
+
+        // Sincronización precisa de Puntos de Vida y Corazones Dorados (Absorción)
+        constexpr size_t DR3_MAX_HEALTH = 0x234;          // float (4 bytes: Max HP de Nick Ramos, ej: 1000.0f, 1500.0f)
+        constexpr size_t DR3_RAW_HEALTH = 0x238;          // float (4 bytes: HP actual numérico de Nick Ramos)
     }
 
     enum class UseActionType : uint32_t {
