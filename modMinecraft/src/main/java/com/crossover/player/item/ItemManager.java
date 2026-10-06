@@ -39,49 +39,154 @@ public class ItemManager {
             }
         }
 
-        // 3. Procesar orden de Clic Izquierdo (Ataque con espada / herramienta / arma DR3 / puño / minar bloques)
+        // 3. Procesar orden de Clic Izquierdo (Ataque con espada / puño / mechero / poción / minar bloques)
         if (ipc.consumeActionLeftClick()) {
             net.minecraft.client.MinecraftClient client = net.minecraft.client.MinecraftClient.getInstance();
             player.swingHand(net.minecraft.util.Hand.MAIN_HAND);
-            if (client.interactionManager != null && client.targetedEntity != null) {
-                client.interactionManager.attackEntity(player, client.targetedEntity);
-            } else if (client.crosshairTarget instanceof net.minecraft.util.hit.BlockHitResult bHit) {
+            ItemStack held = player.getMainHandStack();
+
+            // A) Minar bloques colocados por el jugador
+            if (client.crosshairTarget instanceof net.minecraft.util.hit.BlockHitResult bHit) {
                 net.minecraft.util.math.BlockPos hitPos = bHit.getBlockPos();
                 if (!player.getWorld().isAir(hitPos) && player.getWorld().getBlockState(hitPos).getBlock() != net.minecraft.block.Blocks.BARRIER) {
-                    if (player.isCreative()) {
-                        player.getWorld().breakBlock(hitPos, false);
-                    } else if (client.interactionManager != null) {
-                        client.interactionManager.attackBlock(hitPos, bHit.getSide());
+                    player.getWorld().breakBlock(hitPos, true);
+                    if (client.getServer() != null) {
+                        net.minecraft.server.world.ServerWorld sWorld = client.getServer().getWorld(player.getWorld().getRegistryKey());
+                        if (sWorld != null) sWorld.breakBlock(hitPos, true);
                     }
+                    if (com.crossover.core.CrossoverMod.worldSyncManager != null) {
+                        com.crossover.core.CrossoverMod.worldSyncManager.onBlockBroken(hitPos.getX(), hitPos.getY(), hitPos.getZ());
+                    }
+                    return;
                 }
+            }
+
+            // B) Ataque contra entidades o zombies de Dead Rising 3
+            if (held.getItem() == net.minecraft.item.Items.FLINT_AND_STEEL) {
+                // Prender fuego a los zombies con el Mechero
+                player.playSound(net.minecraft.sound.SoundEvents.ITEM_FLINTANDSTEEL_USE, 1.0f, 1.0f);
+                ipc.sendZombieCombatAction(4, (float) player.getX(), (float) player.getY(), (float) player.getZ(), 50.0f);
+            } else if (held.getItem() == net.minecraft.item.Items.SPLASH_POTION) {
+                // Poción arrojadiza de daño
+                player.playSound(net.minecraft.sound.SoundEvents.ENTITY_SPLASH_POTION_THROW, 1.0f, 1.0f);
+                ipc.sendZombieCombatAction(3, (float) player.getX(), (float) player.getY(), (float) player.getZ(), 80.0f);
+            } else {
+                // Golpe melee (Espada, hacha o puños)
+                float dmg = 25.0f;
+                if (held.getItem() == net.minecraft.item.Items.DIAMOND_SWORD) dmg = 55.0f;
+                player.playSound(net.minecraft.sound.SoundEvents.ENTITY_PLAYER_ATTACK_SWEEP, 1.0f, 1.0f);
+                ipc.sendZombieCombatAction(1, (float) player.getX(), (float) player.getY(), (float) player.getZ(), dmg);
+            }
+
+            if (client.interactionManager != null && client.targetedEntity != null) {
+                client.interactionManager.attackEntity(player, client.targetedEntity);
             }
         }
 
-        // 4. Procesar orden de Clic Derecho (Comida / Colocación de Bloques / Uso de Armas)
+        // 4. Procesar orden de Clic Derecho (Comida / Colocación de Bloques / Mechero / Pociones / Encendido de TNT)
         if (ipc.readActionRightClick()) {
             ipc.consumeActionRightClick();
             net.minecraft.client.MinecraftClient client = net.minecraft.client.MinecraftClient.getInstance();
             ItemStack held = player.getMainHandStack();
-            if (held.getItem() instanceof net.minecraft.item.BlockItem blockItem) {
-                net.minecraft.util.math.BlockPos placePos = null;
+
+            // A) Mechero: Encendido de TNT o prender fuego a zombies
+            if (held.getItem() == net.minecraft.item.Items.FLINT_AND_STEEL) {
                 if (client != null && client.crosshairTarget instanceof net.minecraft.util.hit.BlockHitResult bHit) {
                     net.minecraft.util.math.BlockPos hit = bHit.getBlockPos();
-                    if (!player.getWorld().isAir(hit)) {
+                    if (player.getWorld().getBlockState(hit).getBlock() == net.minecraft.block.Blocks.TNT) {
+                        player.getWorld().removeBlock(hit, false);
+                        if (client.getServer() != null) {
+                            net.minecraft.server.world.ServerWorld sWorld = client.getServer().getWorld(player.getWorld().getRegistryKey());
+                            if (sWorld != null) sWorld.removeBlock(hit, false);
+                        }
+                        net.minecraft.entity.TntEntity tntEntity = new net.minecraft.entity.TntEntity(
+                                player.getWorld(), (double) hit.getX() + 0.5, (double) hit.getY(), (double) hit.getZ() + 0.5, player
+                        );
+                        player.getWorld().spawnEntity(tntEntity);
+                        player.getWorld().playSound(null, tntEntity.getX(), tntEntity.getY(), tntEntity.getZ(),
+                                net.minecraft.sound.SoundEvents.ENTITY_TNT_PRIMED, net.minecraft.sound.SoundCategory.BLOCKS, 1.0f, 1.0f);
+                        if (com.crossover.core.CrossoverMod.worldSyncManager != null) {
+                            com.crossover.core.CrossoverMod.worldSyncManager.onBlockBroken(hit.getX(), hit.getY(), hit.getZ());
+                        }
+                        player.swingHand(net.minecraft.util.Hand.MAIN_HAND);
+                        return;
+                    }
+                }
+                // Prender fuego en el juego
+                player.playSound(net.minecraft.sound.SoundEvents.ITEM_FLINTANDSTEEL_USE, 1.0f, 1.0f);
+                ipc.sendZombieCombatAction(4, (float) player.getX(), (float) player.getY(), (float) player.getZ(), 50.0f);
+                player.swingHand(net.minecraft.util.Hand.MAIN_HAND);
+                return;
+            }
+
+            // B) Poción de Daño Arrojadiza
+            if (held.getItem() == net.minecraft.item.Items.SPLASH_POTION) {
+                player.playSound(net.minecraft.sound.SoundEvents.ENTITY_SPLASH_POTION_THROW, 1.0f, 1.0f);
+                ipc.sendZombieCombatAction(3, (float) player.getX(), (float) player.getY(), (float) player.getZ(), 85.0f);
+                player.swingHand(net.minecraft.util.Hand.MAIN_HAND);
+                if (!player.isCreative()) {
+                    held.decrement(1);
+                }
+                return;
+            }
+
+            // C) Colocación de Bloques con Raycast Preciso sobre el Asfalto de Los Perdidos
+            if (held.getItem() instanceof net.minecraft.item.BlockItem blockItem) {
+                net.minecraft.util.math.BlockPos placePos = null;
+
+                // 1. Si apunta a un bloque previamente colocado
+                if (client != null && client.crosshairTarget instanceof net.minecraft.util.hit.BlockHitResult bHit) {
+                    net.minecraft.util.math.BlockPos hit = bHit.getBlockPos();
+                    if (!player.getWorld().isAir(hit) && player.getWorld().getBlockState(hit).getBlock() != net.minecraft.block.Blocks.BARRIER) {
                         placePos = hit.offset(bHit.getSide());
                     }
                 }
-                if (placePos == null) {
-                    net.minecraft.util.math.Vec3d eyePos = player.getEyePos();
-                    net.minecraft.util.math.Vec3d lookVec = player.getRotationVector();
-                    net.minecraft.util.math.Vec3d target = eyePos.add(lookVec.multiply(2.5));
+
+                // 2. Si mira hacia abajo mientras salta (Pillar Jump / Nerd Poling)
+                if (placePos == null && player.getPitch() > 55.0f) {
                     placePos = new net.minecraft.util.math.BlockPos(
-                        (int) Math.floor(target.x),
-                        (int) Math.floor(target.y),
-                        (int) Math.floor(target.z)
+                            (int) Math.floor(player.getX()),
+                            (int) Math.floor(player.getY()) - 1,
+                            (int) Math.floor(player.getZ())
                     );
                 }
+
+                // 3. Raycast analítico de intersección entre la vista y el plano del asfalto (floorY)
+                if (placePos == null) {
+                    net.minecraft.util.math.Vec3d eye = player.getEyePos();
+                    net.minecraft.util.math.Vec3d look = player.getRotationVector();
+                    if (look.y < -0.05) {
+                        double floorY = Math.floor(player.getY());
+                        double t = (floorY - eye.y) / look.y;
+                        if (t > 0 && t <= 6.5) {
+                            double hitX = eye.x + look.x * t;
+                            double hitZ = eye.z + look.z * t;
+                            placePos = new net.minecraft.util.math.BlockPos((int) Math.floor(hitX), (int) floorY, (int) Math.floor(hitZ));
+                        }
+                    }
+                }
+
+                // 4. Fallback frontal directo
+                if (placePos == null) {
+                    net.minecraft.util.math.Vec3d eye = player.getEyePos();
+                    net.minecraft.util.math.Vec3d look = player.getRotationVector();
+                    net.minecraft.util.math.Vec3d target = eye.add(look.multiply(2.5));
+                    placePos = new net.minecraft.util.math.BlockPos((int) Math.floor(target.x), (int) Math.floor(target.y), (int) Math.floor(target.z));
+                }
+
                 net.minecraft.block.Block block = blockItem.getBlock();
-                player.getWorld().setBlockState(placePos, block.getDefaultState(), 3);
+                net.minecraft.block.BlockState bState = block.getDefaultState();
+                player.getWorld().setBlockState(placePos, bState, 3);
+                if (client != null && client.getServer() != null) {
+                    final net.minecraft.util.math.BlockPos targetPos = placePos;
+                    client.getServer().execute(() -> {
+                        net.minecraft.server.world.ServerWorld sWorld = client.getServer().getWorld(player.getWorld().getRegistryKey());
+                        if (sWorld != null) {
+                            sWorld.setBlockState(targetPos, bState, 3);
+                        }
+                    });
+                }
+
                 if (com.crossover.core.CrossoverMod.worldSyncManager != null) {
                     com.crossover.core.CrossoverMod.worldSyncManager.onBlockPlaced(
                         placePos.getX(), placePos.getY(), placePos.getZ(),
@@ -89,6 +194,7 @@ public class ItemManager {
                         block.getDefaultState()
                     );
                 }
+
                 player.swingHand(net.minecraft.util.Hand.MAIN_HAND);
                 player.playSound(block.getDefaultState().getSoundGroup().getPlaceSound(), 1.0f, 1.0f);
                 if (!player.isCreative()) {

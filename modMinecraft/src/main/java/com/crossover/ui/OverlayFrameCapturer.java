@@ -30,6 +30,8 @@ public class OverlayFrameCapturer {
     private static Unsafe unsafe;
     private static int frameCounter = 0;
     private static ByteBuffer pixelBuffer;
+    private static long lastCaptureTime = 0;
+    private static final long CAPTURE_INTERVAL_NS = 16_000_000L; // 60 FPS estables (~16.6ms)
 
     static {
         try {
@@ -75,6 +77,12 @@ public class OverlayFrameCapturer {
      */
     public static void captureFrame(Framebuffer framebuffer, boolean hasOpenScreen) {
         if (framebuffer == null) return;
+        long now = System.nanoTime();
+        if (now - lastCaptureTime < CAPTURE_INTERVAL_NS) {
+            return;
+        }
+        lastCaptureTime = now;
+
         if (baseAddress == 0) {
             if (!initialize()) return;
         }

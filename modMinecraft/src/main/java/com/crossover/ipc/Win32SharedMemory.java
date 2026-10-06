@@ -143,9 +143,38 @@ public class Win32SharedMemory {
     public static final long OFFSET_DR3_MAX_HEALTH = 0x234;
     public static final long OFFSET_DR3_RAW_HEALTH = 0x238;
 
+    // Pilar 5+: Explosiones de TNT y Cargas Explosivas (Minecraft -> DR3)
+    public static final long OFFSET_TNT_EXPLOSION_COUNTER = 0x23C;
+    public static final long OFFSET_TNT_EXPLOSION_X = 0x240;
+    public static final long OFFSET_TNT_EXPLOSION_Y = 0x244;
+    public static final long OFFSET_TNT_EXPLOSION_Z = 0x248;
+    public static final long OFFSET_TNT_EXPLOSION_POWER = 0x24C;
+
+    // Pilar 5+: Malla de Combate y Hordas LOD (Minecraft Golems <-> DR3 Zombies)
+    public static final long OFFSET_ZOMBIE_COMBAT_COUNTER = 0x250;
+    public static final long OFFSET_ZOMBIE_COMBAT_TYPE = 0x254; // 1 = GOLEM_HIT, 2 = GOLEM_KILL, 3 = ZOMBIE_ATTACK
+    public static final long OFFSET_ZOMBIE_COMBAT_X = 0x258;
+    public static final long OFFSET_ZOMBIE_COMBAT_Y = 0x25C;
+    public static final long OFFSET_ZOMBIE_COMBAT_Z = 0x260;
+    public static final long OFFSET_ZOMBIE_COMBAT_DAMAGE = 0x264;
+
+    // Puente de Teclado y Tipeo en Interfaces de Minecraft (Buscador Creativo, Chat, etc.)
+    public static final long OFFSET_MC_TYPED_CHAR = 0x268;
+    public static final long OFFSET_MC_TYPED_KEY_CODE = 0x26C;
+    public static final long OFFSET_MC_TYPED_EVENT_COUNTER = 0x270;
+
+    // Coordenadas reales de Nick Ramos en Los Perdidos
+    public static final long OFFSET_DR3_NICK_X = 0x274;
+    public static final long OFFSET_DR3_NICK_Y = 0x278;
+    public static final long OFFSET_DR3_NICK_Z = 0x27C;
+    public static final long OFFSET_DR3_NICK_VALID = 0x280;
+
     private int localUseCounter = 0;
     private int localThrowCounter = 0;
     private int localBuildingCounter = 0;
+    private int localTntCounter = 0;
+    private int localCombatCounter = 0;
+    private int lastTypedCounter = 0;
 
     public Win32SharedMemory() {
         this.unsafe = getUnsafe();
@@ -166,7 +195,11 @@ public class Win32SharedMemory {
 
         hMapFile = Kernel32.INSTANCE.OpenFileMappingA(Kernel32.FILE_MAP_ALL_ACCESS, false, mapName);
         if (hMapFile == null) {
-            System.err.println("[Fabric IPC] Falló OpenFileMapping. Asegúrate de que el Orquestador C++ esté corriendo.");
+            // Si la DLL o el orquestador aún no lo han creado, crearlo de forma autónoma (0x04 = PAGE_READWRITE)
+            hMapFile = Kernel32.INSTANCE.CreateFileMappingA(new Pointer(-1L), null, 0x04, 0, size, mapName);
+        }
+        if (hMapFile == null) {
+            System.err.println("[Fabric IPC] Falló OpenFileMapping y CreateFileMapping para " + mapName);
             return false;
         }
 
@@ -180,6 +213,11 @@ public class Win32SharedMemory {
         this.baseAddress = Pointer.nativeValue(pBuf);
         System.out.println("[Fabric IPC] Conectado exitosamente en la dirección: 0x" + Long.toHexString(baseAddress));
         return true;
+    }
+
+    public boolean readAckAuthority() {
+        if (baseAddress == 0) return false;
+        return unsafe.getByte(baseAddress + OFFSET_ACK_AUTHORITY_DR3) != 0;
     }
 
     public void disconnect() {
@@ -581,6 +619,27 @@ public class Win32SharedMemory {
         unsafe.putInt(baseAddress + OFFSET_BUILDING_ACTION_COUNTER, localBuildingCounter);
     }
 
+    public void sendTntExplosion(float x, float y, float z, float power) {
+        if (baseAddress == 0) return;
+        localTntCounter++;
+        unsafe.putFloat(baseAddress + OFFSET_TNT_EXPLOSION_X, x);
+        unsafe.putFloat(baseAddress + OFFSET_TNT_EXPLOSION_Y, y);
+        unsafe.putFloat(baseAddress + OFFSET_TNT_EXPLOSION_Z, z);
+        unsafe.putFloat(baseAddress + OFFSET_TNT_EXPLOSION_POWER, power);
+        unsafe.putInt(baseAddress + OFFSET_TNT_EXPLOSION_COUNTER, localTntCounter);
+    }
+
+    public void sendZombieCombatAction(int actionType, float x, float y, float z, float damage) {
+        if (baseAddress == 0) return;
+        localCombatCounter++;
+        unsafe.putInt(baseAddress + OFFSET_ZOMBIE_COMBAT_TYPE, actionType);
+        unsafe.putFloat(baseAddress + OFFSET_ZOMBIE_COMBAT_X, x);
+        unsafe.putFloat(baseAddress + OFFSET_ZOMBIE_COMBAT_Y, y);
+        unsafe.putFloat(baseAddress + OFFSET_ZOMBIE_COMBAT_Z, z);
+        unsafe.putFloat(baseAddress + OFFSET_ZOMBIE_COMBAT_DAMAGE, damage);
+        unsafe.putInt(baseAddress + OFFSET_ZOMBIE_COMBAT_COUNTER, localCombatCounter);
+    }
+
     public int readActiveCollisionCubes() {
         if (baseAddress == 0) return 0;
         return unsafe.getInt(baseAddress + OFFSET_COLLISION_CUBES_ACTIVE);
@@ -696,5 +755,29 @@ public class Win32SharedMemory {
             return true;
         }
         return false;
+    }
+
+    public int[] consumeTypedEvent() {
+        if (baseAddress == 0) return null;
+        int counter = unsafe.getInt(baseAddress + OFFSET_MC_TYPED_EVENT_COUNTER);
+        if (counter > lastTypedCounter) {
+            lastTypedCounter = counter;
+            int c = unsafe.getChar(baseAddress + OFFSET_MC_TYPED_CHAR);
+            int code = unsafe.getInt(baseAddress + OFFSET_MC_TYPED_KEY_CODE);
+            return new int[] { c, code };
+        }
+        return null;
+    }
+
+    public boolean isDr3NickValid() {
+        return baseAddress != 0 && unsafe.getByte(baseAddress + OFFSET_DR3_NICK_VALID) != 0;
+    }
+
+    public float[] readDr3NickPosition() {
+        if (baseAddress == 0) return new float[] { 0.0f, 65.0f, 0.0f };
+        float x = unsafe.getFloat(baseAddress + OFFSET_DR3_NICK_X);
+        float y = unsafe.getFloat(baseAddress + OFFSET_DR3_NICK_Y);
+        float z = unsafe.getFloat(baseAddress + OFFSET_DR3_NICK_Z);
+        return new float[] { x, y, z };
     }
 }

@@ -1014,12 +1014,6 @@ void Plugin_UpdateThread()
 			TheMenu->Update();
 			Notifications->Update();
 
-			// Mantener sincronizado el estado del modelo de Nick Ramos en MT Framework
-			bool* pDrawPlayers = (bool*)_addr(0x1416428A4);
-			if (pDrawPlayers) {
-				*pDrawPlayers = !DR3Crossover::IsCrossoverActive();
-			}
-
 			DR3Crossover::ProcessPlayerAndCamera();
 			DR3Crossover::ProcessPilar4Actions();
 			DR3Crossover::ProcessPilar5();

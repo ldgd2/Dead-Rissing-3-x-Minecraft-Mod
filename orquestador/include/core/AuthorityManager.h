@@ -16,9 +16,9 @@ namespace SyncCore {
     };
 
     struct AuthorityFlags {
-        std::atomic<bool> requestAuthorityMC{false};
-        std::atomic<bool> ackAuthorityYieldedDR3{false};
-        std::atomic<AuthorityState> currentState{AuthorityState::DR3_MASTER};
+        std::atomic<bool> requestAuthorityMC{true};
+        std::atomic<bool> ackAuthorityYieldedDR3{true};
+        std::atomic<AuthorityState> currentState{AuthorityState::MC_MASTER};
     };
 
     class AuthorityManager {

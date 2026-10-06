@@ -42,7 +42,16 @@ public class CrossoverMod implements ClientModInitializer {
 
         // 3. Registrar Eventos Principales (El Game Loop secundario a 20 TPS)
         ClientTickEvents.END_CLIENT_TICK.register(client -> {
-            if (client.player == null || client.world == null || !isIpcConnected) return;
+            if (client.player == null || client.world == null) return;
+
+            // Reintento autónomo de enlace IPC si el juego inició antes que Dead Rising 3
+            if (!isIpcConnected || !ipcClient.isConnected()) {
+                isIpcConnected = ipcClient.connect("Local\\Crossover_Data", 10 * 1024 * 1024);
+                if (!isIpcConnected) {
+                    isIpcConnected = ipcClient.connect("Global\\Orquestador_MC_DR3", 10 * 1024 * 1024);
+                }
+                if (!isIpcConnected) return;
+            }
 
             // Inicializar perspectiva en Tercera Persona (Detrás) para que Steve se renderice visible en DR3
             if (playerManager.isThirdPerson() && client.options.getPerspective() == net.minecraft.client.option.Perspective.FIRST_PERSON) {
@@ -70,9 +79,28 @@ public class CrossoverMod implements ClientModInitializer {
                 playerManager.requestCameraChange(false);
             }
 
+            // Watchdog de proceso: Si Dead Rising 3 se cierra o crashea, cerrar Minecraft automáticamente
+            ticksRunning++;
+            if (ticksRunning % 20 == 0) {
+                boolean dr3Running = ProcessHandle.allProcesses().anyMatch(ph -> {
+                    String cmd = ph.info().command().orElse("").toLowerCase();
+                    return cmd.contains("deadrising3");
+                });
+                if (dr3Running) {
+                    hadDr3Running = true;
+                } else if (hadDr3Running || ticksRunning > 300) {
+                    LOGGER.info("[Crossover] Dead Rising 3 se ha cerrado o no responde. Finalizando sesion de Minecraft...");
+                    client.scheduleStop();
+                    return;
+                }
+            }
+
             // Actualizar módulos en cada tick lógico
             playerManager.tick(client.player);
             worldSyncManager.tick(client.world);
         });
     }
+
+    private static long ticksRunning = 0;
+    private static boolean hadDr3Running = false;
 }

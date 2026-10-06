@@ -294,7 +294,14 @@ HRESULT __stdcall eDirectX11Hook::Present(IDXGISwapChain * pSwapChain, UINT Sync
 	// Puente de Movimiento y Entrada para Minecraft
 	if (pSharedBuf && DR3Crossover::IsCrossoverActive()) {
 		bool isGuiOpen = (*(uint8_t*)(sharedBufAddr + IPC::Offsets::MC_GUI_OPEN) != 0);
-		if (!isGuiOpen) {
+		if (isGuiOpen) {
+			*(uint8_t*)(sharedBufAddr + IPC::Offsets::MC_INPUT_W) = 0;
+			*(uint8_t*)(sharedBufAddr + IPC::Offsets::MC_INPUT_A) = 0;
+			*(uint8_t*)(sharedBufAddr + IPC::Offsets::MC_INPUT_S) = 0;
+			*(uint8_t*)(sharedBufAddr + IPC::Offsets::MC_INPUT_D) = 0;
+			*(uint8_t*)(sharedBufAddr + IPC::Offsets::MC_INPUT_JUMP) = 0;
+			*(uint8_t*)(sharedBufAddr + IPC::Offsets::MC_INPUT_SNEAK) = 0;
+		} else {
 			*(uint8_t*)(sharedBufAddr + IPC::Offsets::MC_INPUT_W) = (GetAsyncKeyState('W') & 0x8000) ? 1 : 0;
 			*(uint8_t*)(sharedBufAddr + IPC::Offsets::MC_INPUT_A) = (GetAsyncKeyState('A') & 0x8000) ? 1 : 0;
 			*(uint8_t*)(sharedBufAddr + IPC::Offsets::MC_INPUT_S) = (GetAsyncKeyState('S') & 0x8000) ? 1 : 0;
@@ -339,9 +346,27 @@ LRESULT __stdcall eDirectX11Hook::WndProc(const HWND hWnd, UINT uMsg, WPARAM wPa
 
 	// 1. Si el inventario de Minecraft está abierto, absorber toda entrada para que Nick no se mueva ni ataque en DR3
 	if (isGuiOpen) {
+		if (uMsg == WM_CHAR) {
+			if (wParam >= 32) {
+				uint32_t cCounter = *(uint32_t*)(sharedBufAddr + IPC::Offsets::MC_TYPED_EVENT_COUNTER) + 1;
+				*(uint16_t*)(sharedBufAddr + IPC::Offsets::MC_TYPED_CHAR) = (uint16_t)wParam;
+				*(uint32_t*)(sharedBufAddr + IPC::Offsets::MC_TYPED_KEY_CODE) = 0;
+				*(uint32_t*)(sharedBufAddr + IPC::Offsets::MC_TYPED_EVENT_COUNTER) = cCounter;
+			}
+			return true;
+		}
+
 		if (uMsg == WM_KEYDOWN) {
-			if (wParam == VK_ESCAPE || wParam == 'E' || wParam == 'e') {
+			if (wParam == VK_ESCAPE) {
 				*(uint8_t*)(sharedBufAddr + IPC::Offsets::MC_KEY_INVENTORY_TOGGLE) = 1;
+				return true;
+			}
+			if (wParam == VK_BACK || wParam == VK_DELETE || wParam == VK_LEFT || 
+				wParam == VK_RIGHT || wParam == VK_UP || wParam == VK_DOWN || wParam == VK_RETURN || wParam == VK_TAB) {
+				uint32_t cCounter = *(uint32_t*)(sharedBufAddr + IPC::Offsets::MC_TYPED_EVENT_COUNTER) + 1;
+				*(uint16_t*)(sharedBufAddr + IPC::Offsets::MC_TYPED_CHAR) = 0;
+				*(uint32_t*)(sharedBufAddr + IPC::Offsets::MC_TYPED_KEY_CODE) = (uint32_t)wParam;
+				*(uint32_t*)(sharedBufAddr + IPC::Offsets::MC_TYPED_EVENT_COUNTER) = cCounter;
 				return true;
 			}
 		}
@@ -373,14 +398,19 @@ LRESULT __stdcall eDirectX11Hook::WndProc(const HWND hWnd, UINT uMsg, WPARAM wPa
 		}
 		break;
 	}
+	case WM_LBUTTONDOWN:
+	{
+		if (isCrossover) {
+			*(uint8_t*)(sharedBufAddr + IPC::Offsets::MC_ACTION_LEFT_CLICK) = 1;
+			return true; // Bloquear a DR3 para que Nick NO ataque ni haga animaciones de puñetazo DR3
+		}
+		break;
+	}
 	case WM_RBUTTONDOWN:
 	{
 		if (isCrossover) {
-			bool isMcItem = (*(uint8_t*)(sharedBufAddr + IPC::Offsets::ACTIVE_HELD_ITEM_IS_MC) != 0);
-			if (isMcItem) {
-				*(uint8_t*)(sharedBufAddr + IPC::Offsets::MC_ACTION_RIGHT_CLICK) = 1;
-				return true; // Bloquear a DR3 para que no haga golpe pesado ni apunte con bloques o comida de MC
-			}
+			*(uint8_t*)(sharedBufAddr + IPC::Offsets::MC_ACTION_RIGHT_CLICK) = 1;
+			return true; // Bloquear a DR3 para que Steve coloque bloques / use ítems
 		}
 		break;
 	}
@@ -391,6 +421,18 @@ LRESULT __stdcall eDirectX11Hook::WndProc(const HWND hWnd, UINT uMsg, WPARAM wPa
 			TheMenu->OnToggleHUD();
 		if (wParam == SettingsMgr->iToggleSlowMoKey)
 			TheMenu->OnToggleSlowMotion();
+
+		// En 1ra persona, Steve tiene el control de movimiento (WASD y salto)
+		if (isCrossover) {
+			uint16_t camMode = *(uint16_t*)(sharedBufAddr + IPC::Offsets::CAMERA_MODE);
+			if (camMode == 1) {
+				if (wParam == 'W' || wParam == 'w' || wParam == 'A' || wParam == 'a' ||
+					wParam == 'S' || wParam == 's' || wParam == 'D' || wParam == 'd' ||
+					wParam == VK_SPACE) {
+					return true; // Consumir para que Nick Ramos NO intente caminar en DR3
+				}
+			}
+		}
 
 		// Tecla 'E' para abrir inventario: consumir para que Nick no recoja ítems en DR3
 		if (isCrossover && (wParam == 'E' || wParam == 'e')) {

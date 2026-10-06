@@ -100,6 +100,31 @@ public class WorldSyncManager {
     }
 
     /**
+     * Notificación cuando detona dinamita TNT en Minecraft.
+     * Transmite una explosión balística y de onda expansiva masiva hacia Dead Rising 3.
+     */
+    public void onTntExploded(double x, double y, double z, float power) {
+        if (ipc == null) return;
+        System.out.println("[WorldSync] ¡DETONACIÓN DE TNT! En (" + x + ", " + y + ", " + z 
+                + ") con potencia " + power + ". Despachando onda expansiva Havok a Dead Rising 3...");
+
+        ipc.sendTntExplosion((float) x, (float) y, (float) z, power);
+
+        // Limpiar bloques destruidos por la explosión en el radio
+        int radius = (int) Math.ceil(power);
+        for (int dx = -radius; dx <= radius; dx++) {
+            for (int dy = -radius; dy <= radius; dy++) {
+                for (int dz = -radius; dz <= radius; dz++) {
+                    if (dx * dx + dy * dy + dz * dz <= radius * radius) {
+                        BlockPos p = new BlockPos((int) Math.floor(x) + dx, (int) Math.floor(y) + dy, (int) Math.floor(z) + dz);
+                        playerPlacedBlocks.remove(p);
+                    }
+                }
+            }
+        }
+    }
+
+    /**
      * Renderizado del Layer Visual propio de Bloques de Construcción de Steve (Pilar 5).
      * Dibuja los adoquines, maderas y barreras con iluminación y texturas completas de Minecraft
      * sobre la calle de Los Perdidos sin ser anulados por la máscara del canal alfa.

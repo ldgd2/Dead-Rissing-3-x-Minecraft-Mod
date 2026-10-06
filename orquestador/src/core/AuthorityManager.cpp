@@ -5,9 +5,15 @@ namespace SyncCore {
 
     AuthorityManager::AuthorityManager(IPC::IPCManager* ipcManager)
         : ipc(ipcManager), puppetMaster(ipcManager) {
-        flags.currentState.store(AuthorityState::DR3_MASTER);
-        flags.requestAuthorityMC.store(false);
-        flags.ackAuthorityYieldedDR3.store(false);
+        flags.currentState.store(AuthorityState::MC_MASTER);
+        flags.requestAuthorityMC.store(true);
+        flags.ackAuthorityYieldedDR3.store(true);
+        if (ipc && ipc->GetBufferPointer()) {
+            uintptr_t buf = (uintptr_t)ipc->GetBufferPointer();
+            *(uint8_t*)(buf + IPC::Offsets::REQUEST_AUTHORITY_MC) = 1;
+            *(uint8_t*)(buf + IPC::Offsets::ACK_AUTHORITY_DR3) = 1;
+            *(uint16_t*)(buf + IPC::Offsets::CAMERA_MODE) = (uint16_t)AuthorityState::MC_MASTER;
+        }
     }
 
     AuthorityManager::~AuthorityManager() {}

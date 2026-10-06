@@ -125,6 +125,32 @@ namespace IPC {
         // Sincronización precisa de Puntos de Vida y Corazones Dorados (Absorción)
         constexpr size_t DR3_MAX_HEALTH = 0x234;          // float (4 bytes: Max HP de Nick Ramos, ej: 1000.0f, 1500.0f)
         constexpr size_t DR3_RAW_HEALTH = 0x238;          // float (4 bytes: HP actual numérico de Nick Ramos)
+
+        // Pilar 5+: Explosiones de TNT y Cargas Explosivas (Minecraft -> DR3)
+        constexpr size_t TNT_EXPLOSION_COUNTER = 0x23C;   // uint32_t (4 bytes: contador monotónico de explosiones)
+        constexpr size_t TNT_EXPLOSION_X = 0x240;         // float (4 bytes: coordenada X de la detonación)
+        constexpr size_t TNT_EXPLOSION_Y = 0x244;         // float (4 bytes: coordenada Y de la detonación)
+        constexpr size_t TNT_EXPLOSION_Z = 0x248;         // float (4 bytes: coordenada Z de la detonación)
+        constexpr size_t TNT_EXPLOSION_POWER = 0x24C;     // float (4 bytes: potencia/radio de la explosión)
+
+        // Pilar 5+: Malla de Combate y Hordas LOD (Minecraft Golems <-> DR3 Zombies)
+        constexpr size_t ZOMBIE_COMBAT_COUNTER = 0x250;   // uint32_t (4 bytes: contador de acciones de combate)
+        constexpr size_t ZOMBIE_COMBAT_TYPE = 0x254;      // uint32_t (4 bytes: 1=HIT, 2=KILL, 3=ZOMBIE_ATTACK)
+        constexpr size_t ZOMBIE_COMBAT_X = 0x258;         // float (4 bytes: coordenada X de la acción)
+        constexpr size_t ZOMBIE_COMBAT_Y = 0x25C;         // float (4 bytes: coordenada Y de la acción)
+        constexpr size_t ZOMBIE_COMBAT_Z = 0x260;         // float (4 bytes: coordenada Z de la acción)
+        constexpr size_t ZOMBIE_COMBAT_DAMAGE = 0x264;    // float (4 bytes: daño aplicado)
+
+        // Puente de Teclado y Tipeo en Interfaces de Minecraft (Buscador Creativo, Chat, etc.)
+        constexpr size_t MC_TYPED_CHAR = 0x268;           // uint16_t (2 bytes: código UTF-16 del caracter tipeado)
+        constexpr size_t MC_TYPED_KEY_CODE = 0x26C;       // uint32_t (4 bytes: VK_BACK, VK_RETURN, etc.)
+        constexpr size_t MC_TYPED_EVENT_COUNTER = 0x270;  // uint32_t (4 bytes: contador monotónico de tipeo)
+        
+        // Coordenadas reales de Nick Ramos en Los Perdidos (DR3 -> Minecraft siempre activas)
+        constexpr size_t DR3_NICK_X = 0x274;              // float (4 bytes: Posición X de Nick en DR3)
+        constexpr size_t DR3_NICK_Y = 0x278;              // float (4 bytes: Elevación Y real de Nick en DR3)
+        constexpr size_t DR3_NICK_Z = 0x27C;              // float (4 bytes: Posición Z de Nick en DR3)
+        constexpr size_t DR3_NICK_VALID = 0x280;          // uint8_t (1 byte: 1 si Nick está en partida con coords válidas)
     }
 
     enum class UseActionType : uint32_t {

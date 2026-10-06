@@ -84,8 +84,8 @@ bool ValidateGameVersion()
 DWORD WINAPI CrossoverInitWorkerThread(LPVOID lpParam)
 {
 	LogHook("CrossoverInitWorkerThread: Esperando estabilizacion del motor MT Framework...");
-	// Esperar 2 segundos para que el motor cargue su ventana y shaders iniciales sin interrupciones
-	Sleep(2000);
+	// Esperar 4 segundos para que el motor cargue su ventana y shaders iniciales sin interrupciones
+	Sleep(4000);
 
 	ValidateGameVersion();
 	OnInitializeHook();

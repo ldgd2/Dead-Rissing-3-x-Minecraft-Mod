@@ -51,6 +51,11 @@ namespace DR3Crossover {
         int32_t lastBlockY;
         int32_t lastBlockZ;
         char lastBlockId[32];
+
+        // Pilar 5+: Explosiones TNT y Combate Horda LOD
+        uint32_t lastTntExplosionCounter;
+        float lastTntX, lastTntY, lastTntZ;
+        uint32_t lastZombieCombatCounter;
         
         float playerX;
         float playerY;

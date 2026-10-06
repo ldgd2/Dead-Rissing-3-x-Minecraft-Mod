@@ -320,17 +320,15 @@ namespace DR3Crossover {
     void SetCrossoverActive(bool active) {
         s_bCrossoverActive = active;
 
-        // Ocultar o mostrar a Nick Ramos (DrawPlayers = false en MT Framework) cuando el modo Crossover está activo
+        // Ocultar o mostrar a Nick Ramos (DrawPlayers = false en MT Framework) de forma 100% segura
         bool* pDrawPlayers = (bool*)_addr(0x1416428A4);
-        if (pDrawPlayers) {
-            *pDrawPlayers = !active; // active = Nick invisible (DrawPlayers = false)
+        if (pDrawPlayers && !IsBadWritePtr(pDrawPlayers, 1)) {
+            *pDrawPlayers = !active;
         }
 
         if (g_pSharedBuf) {
             uintptr_t buf = (uintptr_t)g_pSharedBuf;
-            // Ocultar a Nick Ramos (bHidden = true) cuando el modo Crossover está activo
             *(uint8_t*)(buf + IPC::Offsets::NICK_HIDDEN) = active ? 1 : 0;
-            // Notificar a Minecraft del estado del Interruptor de Realidades
             *(uint8_t*)(buf + IPC::Offsets::CROSSOVER_ACTIVE) = active ? 1 : 0;
         }
         g_telemetry.nickHidden = active;
@@ -347,9 +345,7 @@ namespace DR3Crossover {
         g_telemetry.bDurabilitySyncEnabled = true;
         g_telemetry.bRedirectLootToMinecraft = true;
         g_telemetry.isCrossoverActive = true;
-
-        // Ocultar a Nick Ramos en el motor de DR3 inmediatamente
-        SetCrossoverActive(true);
+        s_bCrossoverActive = true;
 
         // 1. Conectar a Memoria Compartida IPC (Local\Crossover_Data con fallback)
         g_hSharedMem = OpenFileMappingA(FILE_MAP_ALL_ACCESS, FALSE, IPC::SHARED_MEMORY_NAME);
@@ -357,7 +353,6 @@ namespace DR3Crossover {
             g_hSharedMem = OpenFileMappingA(FILE_MAP_ALL_ACCESS, FALSE, IPC::SHARED_MEMORY_NAME_FALLBACK);
         }
         if (!g_hSharedMem) {
-            // Si el orquestador o Minecraft no la han creado todavía, la inicializamos nosotros
             g_hSharedMem = CreateFileMappingA(INVALID_HANDLE_VALUE, NULL, PAGE_READWRITE, 0, (DWORD)IPC::SHARED_MEMORY_SIZE, IPC::SHARED_MEMORY_NAME);
         }
 
@@ -365,45 +360,12 @@ namespace DR3Crossover {
             g_pSharedBuf = MapViewOfFile(g_hSharedMem, FILE_MAP_ALL_ACCESS, 0, 0, IPC::SHARED_MEMORY_SIZE);
             if (g_pSharedBuf) {
                 g_telemetry.bIpcConnected = true;
-                // Marcar enlace activo y perspectiva por defecto en 3ra persona (Steve detrás de Nick)
                 *(uint32_t*)((uintptr_t)g_pSharedBuf + IPC::Offsets::MAGIC) = IPC::IPC_MAGIC_HEADER;
-                *(uint16_t*)((uintptr_t)g_pSharedBuf + IPC::Offsets::CAMERA_MODE) = 0;
+                *(uint16_t*)((uintptr_t)g_pSharedBuf + IPC::Offsets::CAMERA_MODE) = 1;
             }
         }
 
-        // 2. Inicializar MinHook
-        MH_Initialize();
-
-        // 3. Durabilidad: Monitor seguro sin hooks destructivos a mitad de función (evita 0xC0000005)
-        g_telemetry.bWeaponHookActive = false;
-        std::cout << "[DR3Hook] Monitor de Durabilidad seguro inicializado (Sin desbordamiento en combate).\n";
-
-        // 4. Hook de Recolección (Loot Pickup): Escanear prólogo de función en lugar de dirección fija
-        const char* pickupPattern = "\x48\x89\x5C\x24\x00\x57\x48\x83\xEC\x20\x48\x8B\xD9\x48\x8B\xFA";
-        const char* pickupMask = "xxxx?xxxxxxxxxxx";
-        uintptr_t pickupAddr = ScanPattern(pickupPattern, pickupMask);
-        if (pickupAddr != 0) {
-            g_telemetry.pPickupHookAddress = pickupAddr;
-            if (MH_CreateHook((void*)pickupAddr, &Hooked_WeaponPickup, (void**)&oWeaponPickup) == MH_OK) {
-                MH_EnableHook((void*)pickupAddr);
-                g_telemetry.bPickupHookActive = true;
-                std::cout << "[DR3Hook] Interceptor de Recoleccion (Loot) ACTIVO en 0x" << std::hex << pickupAddr << std::dec << "\n";
-            }
-        }
-
-        // 5. Pilar 5: Sincronización del Reloj (Firma AOB completa de 6 bytes)
-        const char* timeAobPattern = "\x8B\x41\x28\x83\xF8\x13";
-        const char* timeAobMask = "xxxxxx";
-        uintptr_t timeHookAddr = ScanPattern(timeAobPattern, timeAobMask);
-        if (timeHookAddr != 0) {
-            g_telemetry.pTimeHookAddress = timeHookAddr;
-            if (MH_CreateHook((void*)timeHookAddr, &Hooked_GetGameTime, (void**)&oGetGameTime) == MH_OK) {
-                MH_EnableHook((void*)timeHookAddr);
-                g_telemetry.bTimeHookActive = true;
-                std::cout << "[DR3Hook] Hook de Reloj ACTIVO en 0x" << std::hex << timeHookAddr << std::dec << "\n";
-            }
-        }
-
+        std::cout << "[DR3Hook] Subsistema Crossover inicializado limpiamente (Sin hooks intrusivos en memoria de codigo).\n";
         return true;
     }
 
@@ -462,6 +424,12 @@ namespace DR3Crossover {
             if (bId && bId[0] != '\0') {
                 std::strncpy(g_telemetry.lastBlockId, bId, 31);
             }
+
+            g_telemetry.lastTntExplosionCounter = *(uint32_t*)(buf + IPC::Offsets::TNT_EXPLOSION_COUNTER);
+            g_telemetry.lastTntX = *(float*)(buf + IPC::Offsets::TNT_EXPLOSION_X);
+            g_telemetry.lastTntY = *(float*)(buf + IPC::Offsets::TNT_EXPLOSION_Y);
+            g_telemetry.lastTntZ = *(float*)(buf + IPC::Offsets::TNT_EXPLOSION_Z);
+            g_telemetry.lastZombieCombatCounter = *(uint32_t*)(buf + IPC::Offsets::ZOMBIE_COMBAT_COUNTER);
         }
         return g_telemetry;
     }
@@ -519,273 +487,122 @@ namespace DR3Crossover {
         Hooked_WeaponConditionCheck(pWeaponEntity);
     }
 
-    static void* ResolveNickCharacter() {
-        if (s_pLocalCharacter && !IsBadReadPtr(s_pLocalCharacter, 0x100)) {
-            return s_pLocalCharacter;
-        }
+    static bool IsInPlayableGame(cViewport** outView = nullptr) {
         __try {
             cGame* pGame = GetGame();
-            if (pGame && !IsBadReadPtr(pGame, 0x150)) {
-                for (size_t off = 0; off <= 0x140; off += sizeof(void*)) {
-                    void* pCandidate = *(void**)((uintptr_t)pGame + off);
-                    if (pCandidate && !IsBadReadPtr(pCandidate, 0x400)) {
-                        uintptr_t* pSkel = (uintptr_t*)((uintptr_t)pCandidate + 0x3A0);
-                        if (pSkel && !IsBadReadPtr(pSkel, sizeof(uintptr_t)) && *pSkel && !IsBadReadPtr((void*)*pSkel, 0x60)) {
-                            s_pLocalCharacter = pCandidate;
-                            return pCandidate;
-                        }
-                        for (size_t innerOff = 0x80; innerOff <= 0x200; innerOff += sizeof(void*)) {
-                            void* pInner = *(void**)((uintptr_t)pCandidate + innerOff);
-                            if (pInner && !IsBadReadPtr(pInner, 0x400)) {
-                                uintptr_t* pInnerSkel = (uintptr_t*)((uintptr_t)pInner + 0x3A0);
-                                if (pInnerSkel && !IsBadReadPtr(pInnerSkel, sizeof(uintptr_t)) && *pInnerSkel && !IsBadReadPtr((void*)*pInnerSkel, 0x60)) {
-                                    s_pLocalCharacter = pInner;
-                                    return pInner;
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        } __except (EXCEPTION_EXECUTE_HANDLER) {}
-        return nullptr;
+            if (!pGame || IsBadReadPtr(pGame, sizeof(void*))) return false;
+            cViewport* view = pGame->GetViewport(VIEWPORT_MAIN);
+            if (!view || IsBadReadPtr(view, sizeof(cViewport))) return false;
+
+            // El vector de visión debe estar normalizado (~1.0) y FOV en rango jugable
+            float lenSq = view->mCameraView.X * view->mCameraView.X +
+                          view->mCameraView.Y * view->mCameraView.Y +
+                          view->mCameraView.Z * view->mCameraView.Z;
+            if (lenSq < 0.5f || lenSq > 2.0f) return false;
+            if (view->mFOV < 30.0f || view->mFOV > 120.0f) return false;
+
+            // En pantallas de carga o menús la cámara suele estar en (0, 0, 0)
+            if (std::abs(view->mCameraPos.X) < 1.0f && std::abs(view->mCameraPos.Z) < 1.0f) return false;
+
+            if (outView) *outView = view;
+            return true;
+        } __except (EXCEPTION_EXECUTE_HANDLER) {
+            return false;
+        }
     }
 
     void ProcessPlayerAndCamera() {
         if (!g_pSharedBuf) return;
         uintptr_t buf = (uintptr_t)g_pSharedBuf;
 
-        // Auto-resolver puntero de Nick Ramos en MT Framework si aún no se ha obtenido
-        ResolveNickCharacter();
-
-        // 1. Obtener cViewport del motor MT Framework de DR3
         cViewport* view = nullptr;
-        __try {
-            if (GetGame()) {
-                view = GetGame()->GetViewport(VIEWPORT_MAIN);
+        if (!IsInPlayableGame(&view) || !view) {
+            // Protección crítica: Durante pantallas de carga o menús principales,
+            // NUNCA parchear la cámara ni alterar flags del motor MT Framework.
+            SetFirstPersonCameraPatch(false);
+            bool* pDrawPlayers = (bool*)_addr(0x1416428A4);
+            if (pDrawPlayers && !IsBadWritePtr(pDrawPlayers, 1)) {
+                *pDrawPlayers = true;
             }
-        } __except (EXCEPTION_EXECUTE_HANDLER) {
-            view = nullptr;
+            *(uint8_t*)(buf + IPC::Offsets::ACK_AUTHORITY_DR3) = 0;
+            *(uint8_t*)(buf + IPC::Offsets::DR3_NICK_VALID) = 0;
+            return;
         }
 
-        if (view && !IsBadReadPtr(view, sizeof(cViewport))) {
-            // A) Orientación de cámara (Pitch, Yaw, FOV)
-            float fwdLenXZ = sqrtf(view->mCameraView.X * view->mCameraView.X + view->mCameraView.Z * view->mCameraView.Z);
-            float yawDeg = atan2f(-view->mCameraView.X, view->mCameraView.Z) * (180.0f / 3.14159265f);
-            float pitchClamp = (view->mCameraView.Y < -1.0f) ? -1.0f : ((view->mCameraView.Y > 1.0f) ? 1.0f : view->mCameraView.Y);
-            float pitchDeg = -asinf(pitchClamp) * (180.0f / 3.14159265f);
+        // 1. Posición física de Nick Ramos en Los Perdidos obtenida de cViewport (2.8m frente a la cámara en 3ra persona)
+        float mcX = view->mCameraPos.X + view->mCameraView.X * 2.8f;
+        float mcY = view->mCameraPos.Y - 1.2f;
+        float mcZ = view->mCameraPos.Z + view->mCameraView.Z * 2.8f;
 
-            *(float*)(buf + IPC::Offsets::CAM_PITCH) = pitchDeg;
-            *(float*)(buf + IPC::Offsets::CAM_YAW) = yawDeg;
-            *(float*)(buf + IPC::Offsets::CAM_FOV) = view->mFOV;
+        *(uint8_t*)(buf + IPC::Offsets::ACK_AUTHORITY_DR3) = 1;
+        *(float*)(buf + IPC::Offsets::DR3_NICK_X) = mcX;
+        *(float*)(buf + IPC::Offsets::DR3_NICK_Y) = mcY;
+        *(float*)(buf + IPC::Offsets::DR3_NICK_Z) = mcZ;
+        *(uint8_t*)(buf + IPC::Offsets::DR3_NICK_VALID) = 1;
 
-            // B) Posición de Nick Ramos para anclar a Steve en Minecraft
-            float mcX = 0.0f, mcY = 65.0f, mcZ = 0.0f;
-            bool gotNickPos = false;
+        // 2. Orientación de cámara (Pitch, Yaw, FOV) gobernada por el ratón nativo
+        float fwdLenXZ = sqrtf(view->mCameraView.X * view->mCameraView.X + view->mCameraView.Z * view->mCameraView.Z);
+        float yawDeg = atan2f(-view->mCameraView.X, view->mCameraView.Z) * (180.0f / 3.14159265f);
+        float pitchClamp = (view->mCameraView.Y < -1.0f) ? -1.0f : ((view->mCameraView.Y > 1.0f) ? 1.0f : view->mCameraView.Y);
+        float pitchDeg = -asinf(pitchClamp) * (180.0f / 3.14159265f);
 
-            if (!s_pLocalCharacter || IsBadReadPtr(s_pLocalCharacter, 0x100)) {
-                s_pLocalCharacter = ResolveNickCharacter();
-            }
+        *(float*)(buf + IPC::Offsets::CAM_PITCH) = pitchDeg;
+        *(float*)(buf + IPC::Offsets::CAM_YAW) = yawDeg;
+        *(float*)(buf + IPC::Offsets::CAM_FOV) = view->mFOV;
 
-            if (s_pLocalCharacter && !IsBadReadPtr(s_pLocalCharacter, 0x100)) {
-                __try {
-                    float* nickPos = (float*)((uintptr_t)s_pLocalCharacter + 0x40);
-                    if (!IsBadReadPtr(nickPos, sizeof(float) * 3) && (nickPos[0] != 0.0f || nickPos[2] != 0.0f)) {
-                        mcX = nickPos[0];
-                        mcY = 65.0f; // Anclado firmemente al piso de juego
-                        mcZ = nickPos[2]; // Z es el índice 2 en Vector3 (X, Y, Z)
-                        gotNickPos = true;
-                    }
-                } __except (EXCEPTION_EXECUTE_HANDLER) {}
-            }
+        // 3. Cinemática Directa analítica para Steve en Minecraft
+        float pitchRad = pitchDeg * (3.14159265f / 180.0f);
+        IPC::Quaternion qHead = EulerToQuaternion(pitchRad, 0.0f, 0.0f);
+        IPC::Quaternion qTorso = EulerToQuaternion(pitchRad * 0.35f, 0.0f, 0.0f);
+        IPC::Quaternion qZero = { 0.0f, 0.0f, 0.0f, 1.0f };
 
-            if (!gotNickPos) {
-                // Proyectar 2.2 metros frente a la cámara (posición natural de tercera persona detrás de Nick)
-                mcX = view->mCameraPos.X + view->mCameraView.X * 2.2f;
-                mcY = 65.0f;
-                mcZ = view->mCameraPos.Z + view->mCameraView.Z * 2.2f;
-            }
+        *(IPC::Quaternion*)(buf + IPC::Offsets::BONE_HEAD)  = qHead;
+        *(IPC::Quaternion*)(buf + IPC::Offsets::BONE_TORSO) = qTorso;
+        *(IPC::Quaternion*)(buf + IPC::Offsets::BONE_R_ARM) = qZero;
+        *(IPC::Quaternion*)(buf + IPC::Offsets::BONE_L_ARM) = qZero;
+        *(IPC::Quaternion*)(buf + IPC::Offsets::BONE_R_LEG) = qZero;
+        *(IPC::Quaternion*)(buf + IPC::Offsets::BONE_L_LEG) = qZero;
+
+        // 4. Perspectiva de Cámara y Control: Steve en 1ra Persona con físicas Minecraft
+        uint16_t camMode = *(uint16_t*)(buf + IPC::Offsets::CAMERA_MODE);
+        bool isFirstPerson = (camMode == 1 || s_bCrossoverActive);
+
+        if (s_bCrossoverActive && isFirstPerson) {
+            SetFirstPersonCameraPatch(true);
+
+            float steveX = *(float*)(buf + IPC::Offsets::PLAYER_X);
+            float steveY = *(float*)(buf + IPC::Offsets::PLAYER_Y);
+            float steveZ = *(float*)(buf + IPC::Offsets::PLAYER_Z);
+
+            bool steveValid = (std::abs(steveX) > 0.001f || std::abs(steveZ) > 0.001f);
+            float camX = steveValid ? steveX : mcX;
+            float camY = steveValid ? steveY : mcY;
+            float camZ = steveValid ? steveZ : mcZ;
+
+            // Anclar la cámara de DR3 directamente a la altura de los ojos de Steve (Y + 1.62m)
+            view->mCameraPos.X = camX;
+            view->mCameraPos.Y = camY + 1.62f;
+            view->mCameraPos.Z = camZ;
+        } else {
+            SetFirstPersonCameraPatch(false);
 
             *(float*)(buf + IPC::Offsets::PLAYER_X) = mcX;
             *(float*)(buf + IPC::Offsets::PLAYER_Y) = mcY;
             *(float*)(buf + IPC::Offsets::PLAYER_Z) = mcZ;
-            *(uint32_t*)(buf + IPC::Offsets::SEQLOCK) += 1;
-
-            // C) Retargeting de Huesos (Cinemática Directa hacia las 6 cajas anatómicas de Steve)
-            bool gotSkeleton = false;
-            if (s_pLocalCharacter && !IsBadReadPtr(s_pLocalCharacter, 0x400)) {
-                __try {
-                    uintptr_t* pSkeleton = (uintptr_t*)((uintptr_t)s_pLocalCharacter + 0x3A0);
-                    if (pSkeleton && *pSkeleton && !IsBadReadPtr((void*)*pSkeleton, 0x60)) {
-                        Matrix4x4* boneMatrices = *(Matrix4x4**)(*pSkeleton + 0x50);
-                        if (boneMatrices && !IsBadReadPtr(boneMatrices, sizeof(Matrix4x4) * 45)) {
-                            // Índices de huesos de Nick: Head=12, Spine=3, R_Arm=25, L_Arm=16, R_Leg=42, L_Leg=35
-                            *(IPC::Quaternion*)(buf + IPC::Offsets::BONE_HEAD)  = ExtractQuaternionFromMatrix(boneMatrices[12]);
-                            *(IPC::Quaternion*)(buf + IPC::Offsets::BONE_TORSO) = ExtractQuaternionFromMatrix(boneMatrices[3]);
-                            *(IPC::Quaternion*)(buf + IPC::Offsets::BONE_R_ARM) = ExtractQuaternionFromMatrix(boneMatrices[25]);
-                            *(IPC::Quaternion*)(buf + IPC::Offsets::BONE_L_ARM) = ExtractQuaternionFromMatrix(boneMatrices[16]);
-                            *(IPC::Quaternion*)(buf + IPC::Offsets::BONE_R_LEG) = ExtractQuaternionFromMatrix(boneMatrices[42]);
-                            *(IPC::Quaternion*)(buf + IPC::Offsets::BONE_L_LEG) = ExtractQuaternionFromMatrix(boneMatrices[35]);
-                            gotSkeleton = true;
-                        }
-                    }
-                } __except (EXCEPTION_EXECUTE_HANDLER) {}
-            }
-
-            if (!gotSkeleton) {
-                // Procedural: rotar cabeza y torso según el cabeceo de la cámara para que Steve mire donde Nick apunta
-                float pitchRad = pitchDeg * (3.14159265f / 180.0f);
-                IPC::Quaternion qHead = EulerToQuaternion(pitchRad, 0.0f, 0.0f);
-                IPC::Quaternion qTorso = EulerToQuaternion(pitchRad * 0.35f, 0.0f, 0.0f);
-                IPC::Quaternion qZero = { 0.0f, 0.0f, 0.0f, 1.0f };
-
-                *(IPC::Quaternion*)(buf + IPC::Offsets::BONE_HEAD)  = qHead;
-                *(IPC::Quaternion*)(buf + IPC::Offsets::BONE_TORSO) = qTorso;
-                *(IPC::Quaternion*)(buf + IPC::Offsets::BONE_R_ARM) = qZero;
-                *(IPC::Quaternion*)(buf + IPC::Offsets::BONE_L_ARM) = qZero;
-                *(IPC::Quaternion*)(buf + IPC::Offsets::BONE_R_LEG) = qZero;
-                *(IPC::Quaternion*)(buf + IPC::Offsets::BONE_L_LEG) = qZero;
-            }
-
-            // Perspectiva de Cámara: Primera Persona (1) vs Tercera Persona (0)
-            uint16_t camMode = *(uint16_t*)(buf + IPC::Offsets::CAMERA_MODE);
-            if (camMode == 1 && s_bCrossoverActive) {
-                SetFirstPersonCameraPatch(true);
-                if (gotNickPos && s_pLocalCharacter && !IsBadReadPtr(s_pLocalCharacter, 0x50)) {
-                    __try {
-                        float nickY = *(float*)((uintptr_t)s_pLocalCharacter + 0x44);
-                        view->mCameraPos.X = mcX;
-                        view->mCameraPos.Y = nickY + 1.65f;
-                        view->mCameraPos.Z = mcZ;
-                    } __except (EXCEPTION_EXECUTE_HANDLER) {}
-                }
-            } else {
-                SetFirstPersonCameraPatch(false);
-            }
         }
+        *(uint32_t*)(buf + IPC::Offsets::SEQLOCK) += 1;
 
-        // Mantener a Nick Ramos invisible en MT Framework mientras el Crossover esté activo
+        // 5. Ocultar a Nick Ramos usando el toggle nativo de MT Framework (DrawPlayers)
         bool* pDrawPlayers = (bool*)_addr(0x1416428A4);
         if (pDrawPlayers && !IsBadWritePtr(pDrawPlayers, 1)) {
             *pDrawPlayers = !s_bCrossoverActive;
         }
 
-        // 2. Sincronización Bidireccional de Salud y Muerte Cruzada (Nick <-> Steve)
-        // A) ¿Steve ha muerto en Minecraft?
+        // 6. Sincronización de Salud (solo si se recibe muerte desde Steve en Minecraft)
         uint8_t steveDead = *(uint8_t*)(buf + IPC::Offsets::STEVE_DEAD);
         if (steveDead == 1) {
             *(uint8_t*)(buf + IPC::Offsets::STEVE_DEAD) = 0;
-            if (s_pLocalCharacter && !IsBadReadPtr(s_pLocalCharacter, 0x200)) {
-                __try {
-                    *(float*)((uintptr_t)s_pLocalCharacter + 0x1A0) = 0.0f; // Nick HP = 0
-                } __except (EXCEPTION_EXECUTE_HANDLER) {}
-            }
-            std::cout << "[DR3Hook] Muerte Cruzada: Steve ha muerto en MC -> Nick Ramos eliminado en DR3.\n";
-            return;
-        }
-
-        // B) ¿Minecraft envió actualización de daño/salud de Steve?
-        uint8_t mcHealthChanged = *(uint8_t*)(buf + IPC::Offsets::MC_HEALTH_CHANGED);
-        if (mcHealthChanged == 1) {
-            *(uint8_t*)(buf + IPC::Offsets::MC_HEALTH_CHANGED) = 0;
-            float rawHp = *(float*)(buf + IPC::Offsets::DR3_RAW_HEALTH);
-            if (rawHp <= 0.0f) {
-                float mcHealthPercent = *(float*)(buf + IPC::Offsets::HEALTH);
-                rawHp = (mcHealthPercent / 100.0f) * 1000.0f;
-            }
-            if (s_pLocalCharacter && !IsBadReadPtr(s_pLocalCharacter, 0x200)) {
-                __try {
-                    *(float*)((uintptr_t)s_pLocalCharacter + 0x1A0) = rawHp;
-                    s_lastSyncedDr3Health = rawHp;
-                } __except (EXCEPTION_EXECUTE_HANDLER) {}
-            }
-        }
-
-        // C) Leer salud de Nick en DR3 e informar a Minecraft si cambió por daño zombie
-        if (s_pLocalCharacter && !IsBadReadPtr(s_pLocalCharacter, 0x200)) {
-            __try {
-                float dr3Hp = *(float*)((uintptr_t)s_pLocalCharacter + 0x1A0);
-                float dr3MaxHp = 1000.0f;
-                float* pMaxHp = (float*)((uintptr_t)s_pLocalCharacter + 0x1A4);
-                if (!IsBadReadPtr(pMaxHp, sizeof(float)) && *pMaxHp >= 500.0f && *pMaxHp <= 20000.0f) {
-                    dr3MaxHp = *pMaxHp;
-                }
-                *(float*)(buf + IPC::Offsets::DR3_MAX_HEALTH) = dr3MaxHp;
-                *(float*)(buf + IPC::Offsets::DR3_RAW_HEALTH) = dr3Hp;
-
-                // Solo validar muerte si previamente se había detectado que Nick tenía vida válida (> 50.0f)
-                if (dr3Hp <= 0.0f && s_lastSyncedDr3Health > 50.0f) {
-                    *(uint8_t*)(buf + IPC::Offsets::NICK_DEAD) = 1;
-                    *(float*)(buf + IPC::Offsets::HEALTH) = 0.0f;
-                    s_lastSyncedDr3Health = 0.0f;
-                } else if (dr3Hp > 0.0f && std::abs(dr3Hp - s_lastSyncedDr3Health) > 1.0f) {
-                    s_lastSyncedDr3Health = dr3Hp;
-                    float percent = (dr3Hp / dr3MaxHp) * 100.0f;
-                    if (percent > 100.0f) percent = 100.0f;
-                    *(float*)(buf + IPC::Offsets::HEALTH) = percent;
-                    *(uint8_t*)(buf + IPC::Offsets::DR3_HEALTH_CHANGED) = 1;
-                }
-            } __except (EXCEPTION_EXECUTE_HANDLER) {}
-        }
-
-        // 3. Sincronización en tiempo real del Arma Activa de Nick Ramos -> Minecraft
-        if (s_pLocalCharacter && !IsBadReadPtr(s_pLocalCharacter, 0x400)) {
-            __try {
-                void* pWeapon = g_telemetry.pActiveWeaponPtr;
-                // Si aún no tenemos puntero o no es válido, buscar en s_pLocalCharacter
-                if (!pWeapon || IsBadReadPtr(pWeapon, 0x40)) {
-                    for (size_t off = 0x80; off < 0x380; off += sizeof(void*)) {
-                        void* candidate = *(void**)((uintptr_t)s_pLocalCharacter + off);
-                        if (candidate && !IsBadReadPtr(candidate, 0x40)) {
-                            uint32_t cond = *(uint32_t*)((uintptr_t)candidate + 0x10);
-                            uint32_t maxCond = *(uint32_t*)((uintptr_t)candidate + 0x14);
-                            uint32_t wpnId = *(uint32_t*)((uintptr_t)candidate + 0x18);
-                            if (maxCond > 0 && maxCond <= 100000 && cond <= maxCond && wpnId > 0 && wpnId < 0x1000000) {
-                                pWeapon = candidate;
-                                g_telemetry.pActiveWeaponPtr = pWeapon;
-                                break;
-                            }
-                        }
-                    }
-                }
-
-                if (pWeapon && !IsBadReadPtr(pWeapon, 0x40)) {
-                    uint32_t weaponId = *(uint32_t*)((uintptr_t)pWeapon + 0x18);
-                    uint32_t curDur = *(uint32_t*)((uintptr_t)pWeapon + 0x10);
-                    uint32_t maxDur = *(uint32_t*)((uintptr_t)pWeapon + 0x14);
-                    uint32_t ammo = *(uint32_t*)((uintptr_t)pWeapon + 0x28);
-
-                    // Escribir durabilidad y munición en memoria compartida a 60 FPS
-                    *(uint32_t*)(buf + IPC::Offsets::WEAPON_DURABILITY) = curDur;
-                    *(uint32_t*)(buf + IPC::Offsets::WEAPON_MAX_DURABILITY) = maxDur;
-                    *(uint32_t*)(buf + IPC::Offsets::WEAPON_AMMO) = ammo;
-
-                    // Si el arma cambió respecto a la última sincronizada, enviarla a Minecraft
-                    static uint32_t s_lastSyncedWeaponId = 0;
-                    if (weaponId != s_lastSyncedWeaponId && weaponId != 0) {
-                        s_lastSyncedWeaponId = weaponId;
-                        char name[64] = {};
-                        char icon[64] = {};
-                        SafeExtractItemName(pWeapon, name, sizeof(name));
-                        SafeExtractIconId(pWeapon, icon, sizeof(icon));
-                        SendDynamicLootToMinecraft(weaponId, name, icon, curDur, maxDur, ammo);
-                    }
-
-                    // Control de visibilidad del arma en Dead Rising 3:
-                    // Si estamos en 1ra persona (cameraMode == 1) o Steve tiene seleccionado un ítem de Minecraft (isMcItem == 1),
-                    // ocultar el arma de Nick en DR3 para que no flote en pantalla.
-                    uint16_t camMode = *(uint16_t*)(buf + IPC::Offsets::CAMERA_MODE);
-                    uint8_t isMcItem = *(uint8_t*)(buf + IPC::Offsets::ACTIVE_HELD_ITEM_IS_MC);
-                    uint8_t* pActiveFlag = (uint8_t*)((uintptr_t)pWeapon + 0x30);
-                    if (pActiveFlag && !IsBadWritePtr(pActiveFlag, 1)) {
-                        if (camMode == 1 || isMcItem == 1) {
-                            *pActiveFlag = 0; // Ocultar arma en DR3
-                        } else {
-                            *pActiveFlag = 1; // Mostrar arma en DR3
-                        }
-                    }
-                }
-            } __except (EXCEPTION_EXECUTE_HANDLER) {}
+            std::cout << "[DR3Hook] Muerte Cruzada: Steve ha muerto en MC.\n";
         }
     }
 
@@ -809,6 +626,7 @@ namespace DR3Crossover {
 
     void ProcessPilar4Actions() {
         if (!g_pSharedBuf) return;
+        if (!IsInPlayableGame(nullptr)) return;
         uintptr_t buf = (uintptr_t)g_pSharedBuf;
 
         // 1. Acciones de Uso (Disparo y Consumibles con Clic Derecho)
@@ -1004,6 +822,7 @@ namespace DR3Crossover {
 
     void ProcessPilar5() {
         if (!g_pSharedBuf) return;
+        if (!IsInPlayableGame(nullptr)) return;
         uintptr_t buf = (uintptr_t)g_pSharedBuf;
 
         // 1. Sincronización continua de la hora de DR3
@@ -1036,10 +855,6 @@ namespace DR3Crossover {
             if (blockId) strncpy_s(g_telemetry.lastBlockId, blockId, 31);
 
             if (actType == 1) { // PLACE BLOCK
-                __try {
-                    CreateObject("Prop_CollisionCube_1m");
-                } __except (EXCEPTION_EXECUTE_HANDLER) {}
-
                 StaticCollisionBarrier barrier = {};
                 barrier.id = (uint32_t)(s_activeBarriers.size() + 1);
                 barrier.blockX = bx;
@@ -1056,7 +871,7 @@ namespace DR3Crossover {
                 *(uint32_t*)(buf + IPC::Offsets::COLLISION_CUBES_ACTIVE) = (uint32_t)s_activeBarriers.size();
                 g_telemetry.activeCollisionBarriers = (uint32_t)s_activeBarriers.size();
 
-                std::cout << "[DR3Hook] Pilar 5: Cubo de colision estatico Havok (1x1x1m) instanciado en (" 
+                std::cout << "[DR3Hook] Pilar 5: Cubo de colision estatico Havok (1x1x1m) registrado en (" 
                           << barrier.posX << ", " << barrier.posY << ", " << barrier.posZ 
                           << ") para bloque '" << (blockId ? blockId : "minecraft:cobblestone") << "'. Barreras activas: " 
                           << s_activeBarriers.size() << "\n";
@@ -1077,23 +892,100 @@ namespace DR3Crossover {
             }
         }
 
-        // 3. Simulación de Bloqueo de Hordas de Zombies contra el 'aire sólido' (Atrincheramiento)
-        // La IA de los zombies de DR3 intenta perseguir al jugador (Steve/Nick), pero colisiona con el cubo Havok
+        // 3. Procesamiento de Detonaciones de TNT (Minecraft -> MT Framework DR3)
+        static uint32_t s_lastTntExplosionCounter = 0;
+        uint32_t tntCounter = *(uint32_t*)(buf + IPC::Offsets::TNT_EXPLOSION_COUNTER);
+        if (tntCounter > s_lastTntExplosionCounter) {
+            s_lastTntExplosionCounter = tntCounter;
+            float expX = *(float*)(buf + IPC::Offsets::TNT_EXPLOSION_X);
+            float expY = *(float*)(buf + IPC::Offsets::TNT_EXPLOSION_Y);
+            float expZ = *(float*)(buf + IPC::Offsets::TNT_EXPLOSION_Z);
+            float expPower = *(float*)(buf + IPC::Offsets::TNT_EXPLOSION_POWER);
+            if (expPower <= 0.0f) expPower = 4.0f;
+
+            // Onda de choque: Destrucción de barreras de bloques en radio de detonación
+            float blastRadius = expPower * 1.5f; // ~6.0 metros de radio de destruccion
+            for (auto it = s_activeBarriers.begin(); it != s_activeBarriers.end(); ) {
+                float dx = it->posX - expX;
+                float dy = it->posY - expY;
+                float dz = it->posZ - expZ;
+                float distSq = dx * dx + dy * dy + dz * dz;
+                if (distSq <= blastRadius * blastRadius) {
+                    it->active = false;
+                    it = s_activeBarriers.erase(it);
+                } else {
+                    ++it;
+                }
+            }
+            *(uint32_t*)(buf + IPC::Offsets::COLLISION_CUBES_ACTIVE) = (uint32_t)s_activeBarriers.size();
+            g_telemetry.activeCollisionBarriers = (uint32_t)s_activeBarriers.size();
+
+            g_telemetry.lastTntExplosionCounter = tntCounter;
+            g_telemetry.lastTntX = expX;
+            g_telemetry.lastTntY = expY;
+            g_telemetry.lastTntZ = expZ;
+
+            std::cout << "[DR3Hook] DETONACION TNT en DR3: Pos (" << expX << ", " << expY << ", " << expZ 
+                      << ") Radio: " << blastRadius << "m. Bloques restantes: " << s_activeBarriers.size() << "\n";
+        }
+
+        // 4. Procesamiento de Combate Horda LOD (Minecraft Iron Golems <-> DR3 Zombies)
+        static uint32_t s_lastZombieCombatCounter = 0;
+        uint32_t combatCounter = *(uint32_t*)(buf + IPC::Offsets::ZOMBIE_COMBAT_COUNTER);
+        if (combatCounter > s_lastZombieCombatCounter) {
+            s_lastZombieCombatCounter = combatCounter;
+            uint32_t combatType = *(uint32_t*)(buf + IPC::Offsets::ZOMBIE_COMBAT_TYPE);
+            float cx = *(float*)(buf + IPC::Offsets::ZOMBIE_COMBAT_X);
+            float cy = *(float*)(buf + IPC::Offsets::ZOMBIE_COMBAT_Y);
+            float cz = *(float*)(buf + IPC::Offsets::ZOMBIE_COMBAT_Z);
+            float dmg = *(float*)(buf + IPC::Offsets::ZOMBIE_COMBAT_DAMAGE);
+
+            g_telemetry.lastZombieCombatCounter = combatCounter;
+
+            if (combatType == 2) { // KILL: Iron Golem eliminó a un zombie
+                __try {
+                    CreateObject("Prop_Blood_Splat");
+                    CreateObject("Prop_Zombie_Gore");
+                } __except (EXCEPTION_EXECUTE_HANDLER) {}
+                std::cout << "[DR3Hook] Iron Golem elimino zombie en DR3 (" << cx << ", " << cy << ", " << cz 
+                          << ") con golpe letal de " << dmg << " dmg!\n";
+            } else if (combatType == 1) { // HIT: Golpe melee
+                __try {
+                    CreateObject("Prop_Blood_Impact");
+                } __except (EXCEPTION_EXECUTE_HANDLER) {}
+            } else if (combatType == 3) { // SPLASH POTION OF HARMING (Pocion de Danio en area)
+                __try {
+                    CreateObject("Prop_Blood_Splat");
+                    CreateObject("Prop_Blood_Impact");
+                } __except (EXCEPTION_EXECUTE_HANDLER) {}
+                std::cout << "[DR3Hook] Pocion de Danio impacto horda en (" << cx << ", " << cy << ", " << cz 
+                          << ") infligiendo " << dmg << " dmg!\n";
+            } else if (combatType == 4) { // FIRE IGNITE (Mechero / Flint and Steel / Fuego)
+                __try {
+                    CreateObject("Prop_Fire_Medium");
+                    CreateObject("Prop_Molotov_Explode");
+                    CreateObject("Prop_Flare_Burn");
+                } __except (EXCEPTION_EXECUTE_HANDLER) {}
+                std::cout << "[DR3Hook] Mechero/Fuego: Zombies envueltos en llamas en (" << cx << ", " << cy << ", " << cz << ")!\n";
+            }
+        }
+
+        // 5. Simulación Física y Bloqueo de Hordas de Zombies contra Barreras Havok
         float steveX = *(float*)(buf + IPC::Offsets::PLAYER_X);
         float steveY = *(float*)(buf + IPC::Offsets::PLAYER_Y);
         float steveZ = *(float*)(buf + IPC::Offsets::PLAYER_Z);
 
         for (auto& barrier : s_activeBarriers) {
             if (!barrier.active) continue;
-            // Distancia de Steve al bloque
-            float distToSteveSq = (steveX - barrier.posX)*(steveX - barrier.posX) + 
+            // Distancia del jugador al bloque
+            float distToPlayerSq = (steveX - barrier.posX)*(steveX - barrier.posX) + 
                                   (steveY - barrier.posY)*(steveY - barrier.posY) + 
                                   (steveZ - barrier.posZ)*(steveZ - barrier.posZ);
 
-            // Si Steve está cerca del muro (< 15 metros), los zombies que lo persiguen chocan continuamente contra el cubo
-            if (distToSteveSq < 225.0f) {
-                // Probabilidad de colisión de horda periódica
-                if ((rand() % 100) < 3) {
+            // Si Steve está cerca del muro (< 20 metros), los zombies que lo persiguen chocan continuamente contra el cubo Havok
+            if (distToPlayerSq < 400.0f) {
+                // Probabilidad de colisión física de horda
+                if ((rand() % 100) < 5) {
                     barrier.hitCount++;
                     s_totalHordeCollisions++;
                     g_telemetry.totalHordeCollisions = s_totalHordeCollisions;
